@@ -367,7 +367,8 @@ def render(interactive=False):
         console.write(" Backend: %s (%s)" % (window._backend.__name__,
                                              window._backend.__version__))
         console.write(" Actual FPS: %.2f frames/second" % (window.fps))
-        console.write(" Type 'v' to toggle bone view")
+        console.write(" Hit 'V' key to toggle bone view mode")
+        console.write(" Hit 'P' key to toggle pause or unpause")
         console.write("-------------------------------------------------------")
         for line in repr(window.config).split("\n"):
             console.write(" "+line)
