@@ -4,10 +4,15 @@ import numpy as np
 import json
 import time
 from log import log
+from helper import rotate_to_direction
 
 
 class Hand:
     def __init__(self):
+        # directions
+        self.palm_normal = np.zeros(3, np.float32)
+        self.timestamp = 256101634501
+
         # the names of the fingers, with order
         self.finger_names = ["thumb", "index", "middle", "ring", "pinky"]
         self.arm_names = ["arm"]
@@ -56,6 +61,14 @@ class Hand:
     # TODO: find a way to optimize this implementation
     # getter and setter logic already extracted
     # tried to use "inspect" package, too slow
+    @property
+    def palm(self):
+        return self.arm[2]
+
+    @property
+    def wrist(self):
+        return self.arm[1]
+
     @property
     def arm(self):
         return self.getter("arm")
@@ -157,31 +170,8 @@ class Hand:
 
         direction = end-start
         m = glm.scale(np.eye(4, dtype=np.float32), bone_scale, 1/comp_scale/2 * np.linalg.norm(direction), bone_scale)  # scale down a little bit
-        m = self.rotate_to_direction(m, direction)
+        m = rotate_to_direction(m, direction)
         m = glm.translate(m, *((start+end)/2))  # to middle point
-        return m
-
-    @staticmethod
-    def rotate_to_direction(m, direction):
-        r = np.eye(4, dtype=np.float32)
-        if direction[0] == 0 and direction[2] == 0:
-            if direction[1] < 0:  # rotate 180 degrees
-                r[0, 0] = -1
-                r[1, 1] = -1
-
-            # else if direction.y >= 0, leave transform as the identity matrix.
-        else:
-            def normalize(x):
-                n = np.linalg.norm(x)
-                return x/n
-            new_y = normalize(direction)
-            new_z = normalize(np.cross(new_y, np.array([0, 1, 0])))
-            new_x = normalize(np.cross(new_y, new_z))
-
-            r[:3, 0] = new_x
-            r[:3, 1] = new_y
-            r[:3, 2] = new_z
-        m = np.dot(m, r.T)  # translated
         return m
 
     def draw(self):
@@ -225,6 +215,8 @@ class Hand:
         # log.info(f"Extracting hand info at index: {index}")
         hand_json = leap_json["hands"][index]
         hand_id = hand_json["id"]
+        if hand_json["confidence"] < 0.7:
+            return
         pointables = [p for p in leap_json["pointables"] if p["handId"] == hand_id]
         pointables = sorted(pointables, key=lambda x: x["type"])  # from thumb to pinky
         assert len(pointables) == len(self.finger_names)
@@ -232,12 +224,8 @@ class Hand:
         # log.info(f"Getting hand_json: {hand_json}")
         # log.info(f"Getting sorted pointables: {pointables}")
 
-        self.history.append(
-            {
-                "pos": self.pos,
-                "timestamp": leap_json["timestamp"]
-            }
-        )
+        self.timestamp = leap_json["timestamp"]
+        self.palm_normal = np.array(hand_json["palmNormal"])
 
         arm = np.array([hand_json[name] for name in self.arm_pos_names]) / 100
         self.arm = arm
@@ -249,9 +237,22 @@ class Hand:
 
             setattr(self, name, finger)
 
+        # self.update_history()
+
+    def update_history(self):
+        self.history.append(
+            {
+                "pos": self.pos,
+                "timestamp": self.timestamp,
+                "palm_normal": self.palm_normal
+            }
+        )
+
     @property
     def formatted_data(self):
         obj = {name: {n: v.tolist() for n, v in zip(self.name_to_pos_names[name], getattr(self, name))} for name in self.component_names}
+        obj["timestamp"] = self.timestamp
+        obj["palm_normal"] = self.palm_normal
         return obj
 
     def __str__(self):

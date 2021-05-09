@@ -6,7 +6,8 @@ from threading import Thread, Lock
 
 from glumpy import app, gl, glm, gloo, __version__
 from hand import Hand
-from gesture import GestureHelper
+from beacon import Beacon
+from gesture import GestureParser
 
 from log import log
 
@@ -22,8 +23,8 @@ def render(interactive=False):
     global window  # to be used to close the window
     window = app.Window(width=console.cols*console.cwidth*console.scale, height=console.rows*console.cheight*console.scale, color=(0.3, 0.3, 0.3, 1), config=config)
 
-    @window.timer(1/60.0)
-    def timer(fps):
+    @window.timer(1/30.0)
+    def timer(dt):
         console.clear()
         console.write("-------------------------------------------------------")
         console.write(" Glumpy version %s" % (__version__))
@@ -39,8 +40,10 @@ def render(interactive=False):
             console.write(" "+line)
         console.write("-------------------------------------------------------")
 
+    @window.timer(1/30.0)
+    def rotate(dt):
         # Rotate cube
-        for hand in gesture.hand_pool:
+        for hand in hand_pool:
             model = hand.key_point.program["u_model"].reshape(4, 4)
             glm.rotate(model, 1, 0, 0, 1)
             glm.rotate(model, 1, 0, 1, 0)
@@ -50,18 +53,27 @@ def render(interactive=False):
             glm.rotate(model, 1, 0, 1, 0)
             hand.bone.program['u_model'] = model
 
+    @window.timer(1/60.0)
+    def parse_and_send(dt):
+        # log.info(f"Parsing position data...")
+        signal = parser.parse()
+        # log.info(f"Getting parser result: {signal}")
+        beacon.send(signal)
+        pass
+
     @window.event
     def on_draw(dt):
         window.clear()
-
         console.draw()
+        parser.debug_cube.draw()
 
-        for hand in gesture.hand_pool:
+        for hand in hand_pool:
             hand.draw()
 
     @window.event
     def on_resize(width, height):
-        for hand in gesture.hand_pool:
+        parser.debug_cube.resize(width, height)
+        for hand in hand_pool:
             hand.resize(width, height)
 
     @window.event
@@ -81,7 +93,7 @@ def render(interactive=False):
         global update_hand_obj, stop_websocket
         'A character has been typed'
         if text == "v":
-            for hand in gesture.hand_pool:
+            for hand in hand_pool:
                 hand.show_type += 1
                 hand.show_type %= 3
         elif text == 'p':
@@ -127,8 +139,11 @@ def sample():
                         # log.info(f"Getting {len(msg['hands'])} hands")
                         # ! transforming millimeters to meters
                         start = time.perf_counter()
-                        for i in range(min(len(msg["hands"]), len(gesture.hand_pool))):
-                            gesture.update(msg, i)
+                        for i in range(min(len(msg["hands"]), len(hand_pool))):
+                            if msg["hands"][i]["type"] == "left":
+                                hand_pool[0].store_pos(msg, i)
+                            else:
+                                hand_pool[1].store_pos(msg, i)
                         end = time.perf_counter()
                         # log.info(f"Takes {end-start} to complete the extraction task")
                     # else:
@@ -154,7 +169,9 @@ def main():
 stop_websocket = False
 update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
-gesture = GestureHelper()
+hand_pool = [Hand() for i in range(2)]
+beacon = Beacon()
+parser = GestureParser(hand_pool[1])  # currently only responding to right hand gesture
 
 if __name__ == "__main__":
     main()

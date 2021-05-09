@@ -3,7 +3,7 @@ import numpy as np
 
 
 class HollowCube:
-    def __init__(self, u_view, transform):
+    def __init__(self, u_view, transform: np.ndarray):
         vertex = """
 uniform mat4   u_model;         // Model matrix
 uniform mat4   u_transform;     // Transform matrix
