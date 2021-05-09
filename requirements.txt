@@ -1,0 +1,5 @@
+websockets
+numpy
+pyopengl
+cython
+glumpy
