@@ -6,6 +6,12 @@ from glumpy import app, gl, glm, gloo, __version__
 import concurrent.futures
 import time
 from threading import Thread, Lock
+import coloredlogs
+import logging
+
+log = logging.getLogger(__name__)
+
+coloredlogs.install(level='INFO')  # Change this to DEBUG to see more info.
 
 
 class HollowCube:
@@ -90,7 +96,7 @@ void main()
         self.transform = transform
 
     def draw(self):
-        # print(f"Redrawing...")
+        # log.info(f"Redrawing...")
 
         self.program['u_transform'] = self.transform
 
@@ -315,15 +321,15 @@ class Hand:
         "param index": hand #index in the json obj
         """
 
-        # print(f"Extracting hand info at index: {index}")
+        # log.info(f"Extracting hand info at index: {index}")
         hand_json = leap_json["hands"][index]
         hand_id = hand_json["id"]
         pointables = [p for p in leap_json["pointables"] if p["handId"] == hand_id]
         pointables = sorted(pointables, key=lambda x: x["type"])  # from thumb to pinky
         assert len(pointables) == len(self.finger_names)
 
-        # print(f"Getting hand_json: {hand_json}")
-        # print(f"Getting sorted pointables: {pointables}")
+        # log.info(f"Getting hand_json: {hand_json}")
+        # log.info(f"Getting sorted pointables: {pointables}")
 
         arm = np.array([hand_json[name] for name in self.arm_pos_names]) / 100
         self.arm = arm
@@ -349,12 +355,13 @@ class Hand:
 
 def render(interactive=False):
 
-    print(f"Runnning glfw renderer")
+    log.info(f"Runnning glfw renderer")
 
     app.use("glfw")
     config = app.configuration.Configuration()
     config.samples = 16
     console = app.Console(rows=32, cols=80, scale=3, color=(1, 1, 1, 1))
+    global window # to be used to close the window
     window = app.Window(width=console.cols*console.cwidth*console.scale, height=console.rows*console.cheight*console.scale, color=(0.3, 0.3, 0.3, 1), config=config)
 
     @window.timer(1/60.0)
@@ -367,8 +374,8 @@ def render(interactive=False):
         console.write(" Backend: %s (%s)" % (window._backend.__name__,
                                              window._backend.__version__))
         console.write(" Actual FPS: %.2f frames/second" % (window.fps))
-        console.write(" Hit 'V' key to toggle bone view mode")
-        console.write(" Hit 'P' key to toggle pause or unpause")
+        console.write(" Hit 'V' key to toggle bone view")
+        console.write(" Hit 'P' key to pause or unpause")
         console.write("-------------------------------------------------------")
         for line in repr(window.config).split("\n"):
             console.write(" "+line)
@@ -409,7 +416,7 @@ def render(interactive=False):
     def on_close():
         global stop_websocket
         stop_websocket = True
-        print("The user closed the renderer window")
+        log.info("The user closed the renderer window")
 
     @window.event
     def on_character(text):
@@ -426,12 +433,16 @@ def render(interactive=False):
     sampler_thread.start()
 
     window.attach(console)
+    if interactive:
+        log.info(f"Running in interactive mode, run Python here freely")
+        log.info(f"Use 'app.__backend__.windows()[0].close()' to close the window")
+        log.info(f"Use Ctrl+D to quit the Python Interactive Shell")
     app.run(framerate=60, interactive=interactive)
 
-    print(f"The renderer app has exited")
+    log.info(f"The render function returned")
 
 
-def sample(interactive=False):
+def sample():
 
     async def leap_sampler():
         global stop_websocket, update_hand_obj
@@ -440,7 +451,7 @@ def sample(interactive=False):
             await ws.send(json.dumps({"focused": True}))
             await ws.send(json.dumps({"background": True}))
             await ws.send(json.dumps({"optimizeHMD": False}))
-            print(f"Focused on the leap motion controller...")
+            log.info(f"Focused on the leap motion controller...")
             end = start = previous = time.perf_counter()
 
             while not stop_websocket:
@@ -449,35 +460,32 @@ def sample(interactive=False):
                 msg = await ws.recv()
                 current = time.perf_counter()
                 if current - previous < end - start:
-                    # print(f"Skipped...")
+                    # log.info(f"Skipped...")
                     continue
 
                 msg = json.loads(msg)
                 if "timestamp" in msg:
                     if len(msg["hands"]) > 0 and update_hand_obj:
-                        # print(f"Getting {len(msg['hands'])} hands")
+                        # log.info(f"Getting {len(msg['hands'])} hands")
                         # ! transforming millimeters to meters
                         start = time.perf_counter()
                         for i in range(min(len(msg["hands"]), len(hand_pool))):
                             hand_pool[i].store_pos(msg, i)
                         end = time.perf_counter()
-                        # print(f"Takes {end-start} to complete the extraction task")
+                        # log.info(f"Takes {end-start} to complete the extraction task")
                     # else:
-                        # print(f"No hands hans been found")
+                        # log.info(f"No hands hans been found")
                 else:
-                    print(f"Getting message: {msg}")
+                    log.info(f"Getting message: {msg}")
 
                 previous = time.perf_counter()
 
-        print(f"Leap motion sampler is stopped")
+        log.info(f"Leap motion sampler is stopped")
 
-    print(f"Running demo sampler from leap motion")
-    if interactive:
-        loop = asyncio.get_event_loop()
-    else:
-        loop = asyncio.new_event_loop()
+    log.info(f"Running demo sampler from leap motion")
+    loop = asyncio.new_event_loop()
     loop.run_until_complete(leap_sampler())
-    print(f"Sampler runner thread exited")
+    log.info(f"Sampler runner thread exited")
 
 
 def main():
