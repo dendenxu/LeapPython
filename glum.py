@@ -9,7 +9,7 @@ import time
 
 
 class HollowCube:
-    def __init__(self, u_view, transform, should_hollow):
+    def __init__(self, u_view, transform, should_hollow=True):
         vertex = """
 uniform mat4   u_model;         // Model matrix
 uniform mat4   u_transform;     // Transform matrix
@@ -30,7 +30,6 @@ void main()
 """
 
         fragment = """
-uniform int u_should_hollow;
 varying vec4 v_color;    // Interpolated fragment color (in)
 varying vec3 v_position; // Interpolated vertex position (in)
 void main()
@@ -42,19 +41,17 @@ void main()
     float b2 = 0.76;
     float b3 = 0.98;
 
-    if (u_should_hollow==0) {
-        gl_FragColor = v_color;
-    } else {
-        if ((xy < b1) && (xz < b1) && (yz < b1)) {
-                discard;
-        }
-        else if ((xy < b2) && (xz < b2) && (yz < b2))
-            gl_FragColor = vec4(0,0,0,1);
-        else if ((xy > b3) || (xz > b3) || (yz > b3))
-            gl_FragColor = vec4(0,0,0,1);
-        else
-            gl_FragColor = v_color;
+
+    if ((xy < b1) && (xz < b1) && (yz < b1)) {
+            discard;
     }
+    else if ((xy < b2) && (xz < b2) && (yz < b2))
+        gl_FragColor = vec4(0,0,0,1);
+    else if ((xy > b3) || (xz > b3) || (yz > b3))
+        gl_FragColor = vec4(0,0,0,1);
+    else
+        gl_FragColor = v_color;
+    
 }
 """
         # structured data type
@@ -87,7 +84,7 @@ void main()
         cube['u_transform'] = transform
         cube['u_view'] = u_view
         # ! IS THIS A BUG? CANNOT USE BOOL IN GLSL SHADER
-        cube['u_should_hollow'] = np.uint32(should_hollow)
+        # cube['u_should_hollow'] = np.uint32(should_hollow)
 
         self.program = cube
         self.transform = transform
@@ -126,8 +123,10 @@ class Hand:
         self.finger_scale = 0.5
 
         # actual OpenGL object wrapper of all key points, reused
-        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32), True)
-        self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32), False)
+        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
+        self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
+
+        self.show_type = 0
 
         # mapper from all finger names and "arm" to their index in the position list
         self.name_to_index = {}
@@ -283,16 +282,19 @@ class Hand:
         b = self.bone
         for i, name in enumerate(self.component_names):
             positions = getattr(self, name)
-            for v in positions:
-                c.transform = self.get_key_point_transform(v, name)
-                c.draw()
-
-            for i in range(len(positions)-1):
-                # iterate through all positions except last
-                start = positions[i]
-                end = positions[i+1]
-                b.transform = self.get_bone_transform(start, end, b.global_scale, name)
-                b.draw()
+            show_bone = self.show_type == 0 or self.show_type == 2
+            show_key = self.show_type == 1 or self.show_type == 2
+            if show_bone:
+                for i in range(len(positions)-1):
+                    # iterate through all positions except last
+                    start = positions[i]
+                    end = positions[i+1]
+                    b.transform = self.get_bone_transform(start, end, b.global_scale, name)
+                    b.draw()
+            if show_key:
+                for v in positions:
+                    c.transform = self.get_key_point_transform(v, name)
+                    c.draw()
 
     def resize(self, width, height):
         """
@@ -350,6 +352,7 @@ def render(interactive=False):
         console.write(" Backend: %s (%s)" % (window._backend.__name__,
                                              window._backend.__version__))
         console.write(" Actual FPS: %.2f frames/second" % (window.fps))
+        console.write(" Type 'v' to toggle bone view")
         console.write("-------------------------------------------------------")
         for line in repr(window.config).split("\n"):
             console.write(" "+line)
@@ -391,6 +394,14 @@ def render(interactive=False):
         global stop_websocket
         stop_websocket = True
         print("The user closed the renderer window")
+
+    @window.event
+    def on_character(text):
+        'A character has been typed'
+        if text == "v":
+            for hand in hand_pool:
+                hand.show_type += 1
+                hand.show_type %= 3
 
     window.attach(console)
     app.run(framerate=60, interactive=interactive)
