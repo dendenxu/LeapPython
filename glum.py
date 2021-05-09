@@ -1,356 +1,15 @@
 import json
 import websockets
 import asyncio
-import numpy as np
-from glumpy import app, gl, glm, gloo, __version__
-import concurrent.futures
 import time
 from threading import Thread, Lock
-import coloredlogs
-import logging
 
-log = logging.getLogger(__name__)
+from glumpy import app, gl, glm, gloo, __version__
+from hollowcube import HollowCube
+from hand import Hand
+from gesture import GestureHelper
 
-coloredlogs.install(level='INFO')  # Change this to DEBUG to see more info.
-
-
-class HollowCube:
-    def __init__(self, u_view, transform):
-        vertex = """
-uniform mat4   u_model;         // Model matrix
-uniform mat4   u_transform;     // Transform matrix
-uniform mat4   u_view;          // View matrix
-uniform mat4   u_projection;    // Projection matrix
-uniform vec4   u_color;         // Global color
-attribute vec4 a_color;         // Vertex color
-attribute vec3 a_position;      // Vertex position
-varying vec3   v_position;      // Interpolated vertex position (out)
-varying vec4   v_color;         // Interpolated fragment color (out)
-
-void main()
-{
-    v_color = u_color * a_color;
-    v_position = a_position;
-    gl_Position = u_projection * u_view * u_transform * u_model * vec4(a_position,1.0);
-}
-"""
-
-        fragment = """
-varying vec4 v_color;    // Interpolated fragment color (in)
-varying vec3 v_position; // Interpolated vertex position (in)
-void main()
-{
-    float xy = min( abs(v_position.x), abs(v_position.y));
-    float xz = min( abs(v_position.x), abs(v_position.z));
-    float yz = min( abs(v_position.y), abs(v_position.z));
-    float b1 = 0.74;
-    float b2 = 0.76;
-    float b3 = 0.98;
-
-
-    if ((xy < b1) && (xz < b1) && (yz < b1)) {
-            discard;
-    }
-    else if ((xy < b2) && (xz < b2) && (yz < b2))
-        gl_FragColor = vec4(0,0,0,1);
-    else if ((xy > b3) || (xz > b3) || (yz > b3))
-        gl_FragColor = vec4(0,0,0,1);
-    else
-        gl_FragColor = v_color;
-    
-}
-"""
-        # structured data type
-        V = np.zeros(8, [("a_position", np.float32, 3),
-                         ("a_color",    np.float32, 4)])
-
-        V["a_position"] = [[1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1],
-                           [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, -1]]
-        V["a_color"] = [[0, 1, 1, 1], [0, 0, 1, 1], [0, 0, 0, 1], [0, 1, 0, 1],
-                        [1, 1, 0, 1], [1, 1, 1, 1], [1, 0, 1, 1], [1, 0, 0, 1]]
-        V = V.view(gloo.VertexBuffer)
-
-        I = np.array([0, 1, 2, 0, 2, 3,  0, 3, 4, 0, 4, 5,  0, 5, 6, 0, 6, 1,
-                      1, 6, 7, 1, 7, 2,  7, 4, 3, 7, 3, 2,  4, 7, 6, 4, 6, 5], dtype=np.uint32)
-        self.I = I.view(gloo.IndexBuffer)
-
-        O = np.array([0, 1, 1, 2, 2, 3, 3, 0, 4, 7, 7, 6,
-                      6, 5, 5, 4, 0, 5, 1, 6, 2, 7, 3, 4], dtype=np.uint32)
-        self.O = O.view(gloo.IndexBuffer)
-
-        # Note that we do not specify the count argument because we'll bind explicitely our own vertex buffer.
-        cube = gloo.Program(vertex, fragment)
-        cube.bind(V)
-
-        self.global_scale = 0.1
-
-        # starting position
-        model = glm.scale(np.eye(4, dtype=np.float32), self.global_scale, self.global_scale, self.global_scale)
-        cube['u_model'] = model
-        cube['u_transform'] = transform
-        cube['u_view'] = u_view
-        # ! IS THIS A BUG? CANNOT USE BOOL IN GLSL SHADER
-        # cube['u_should_hollow'] = np.uint32(should_hollow)
-
-        self.program = cube
-        self.transform = transform
-
-    def draw(self):
-        # log.info(f"Redrawing...")
-
-        self.program['u_transform'] = self.transform
-
-        # Filled cube
-        self.program['u_color'] = 1, 1, 1, 1
-        self.program.draw(gl.GL_TRIANGLES, self.I)
-
-    def resize(self, width, height):
-        self.program['u_projection'] = glm.perspective(45.0, width / float(height), 2.0, 200.0)
-
-
-class Hand:
-    def __init__(self):
-        # the names of the fingers, with order
-        self.finger_names = ["thumb", "index", "middle", "ring", "pinky"]
-        self.arm_names = ["arm"]
-        # all components of a hand, including arm, fingers
-        self.component_names = self.arm_names + self.finger_names
-        # Leap Motion subscription of arm keypoints
-        self.arm_pos_names = ["elbow", "wrist", "palmPosition"]
-        # Leap Motion subscription of finger keypoints
-        # metacarpal, proximal, middle, distal
-        self.finger_pos_names = ["carpPosition", "mcpPosition", "pipPosition", "dipPosition", "btipPosition"]
-        self.name_to_pos_names = {**{name: self.arm_pos_names for name in self.arm_names}, **{name: self.finger_pos_names for name in self.finger_names}}
-
-        # number of key points of the fingers
-        self.finger_key_pt_count = len(self.finger_pos_names) * len(self.finger_names)
-        # number of key points of the arm
-        self.arm_key_pt_count = len(self.arm_pos_names)
-        # global view transformation
-        self.u_view = glm.translation(0, -2, -10)
-        # finger key point scale relative to arm
-        self.finger_scale = 0.5
-
-        # actual OpenGL object wrapper of all key points, reused
-        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
-        self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
-
-        self.show_type = 2
-
-        # mapper from all finger names and "arm" to their index in the position list
-        self.name_to_index = {}
-        arm_name_count = len(self.arm_pos_names)
-        finger_name_count = len(self.finger_pos_names)
-        index = 0
-        self.name_to_index["arm"] = [index, index+arm_name_count]
-        index += arm_name_count
-        for name in self.finger_names:
-            self.name_to_index[name] = [index, index+finger_name_count]
-            index += finger_name_count
-
-        # keypoint position list, queried every frame update for new keypoint position
-        # websockt process should update this list instead of the raw OpenGL obj
-        self.pos = [np.zeros(3, np.float32) for _ in range(self.finger_key_pt_count+self.arm_key_pt_count)]
-
-    # TODO: find a way to optimize this implementation
-    # getter and setter logic already extracted
-    # tried to use "inspect" package, too slow
-    @property
-    def arm(self):
-        return self.getter("arm")
-
-    @arm.setter
-    def arm(self, value):
-        self.setter(value, "arm")
-
-    @property
-    def thumb(self):
-        return self.getter("thumb")
-
-    @thumb.setter
-    def thumb(self, value):
-        self.setter(value, "thumb")
-
-    @property
-    def index(self):
-        return self.getter("index")
-
-    @index.setter
-    def index(self, value):
-        self.setter(value, "index")
-
-    @property
-    def middle(self):
-        return self.getter("middle")
-
-    @middle.setter
-    def middle(self, value):
-        self.setter(value, "middle")
-
-    @property
-    def ring(self):
-        return self.getter("ring")
-
-    @ring.setter
-    def ring(self, value):
-        self.setter(value, "ring")
-
-    @property
-    def pinky(self):
-        return self.getter("pinky")
-
-    @pinky.setter
-    def pinky(self, value):
-        self.setter(value, "pinky")
-
-    def position(self, start=0, end=None):
-        """
-        Evaluate start and end to Python list slice
-
-        :param start: starting position
-        :param end: ending position
-        :return: correpsonding pos in the position list
-        """
-        return self.pos[start:end]
-
-    def getter(self, caller):
-        """
-        Get the position of the corresponding component
-        This should be called by the above @property stuff
-
-        :param caller: caller name, defined in self.component_names
-        :return: np.array of positions, with order
-        """
-        return self.position(*self.name_to_index[caller])
-
-    def setter(self, value, caller):
-        """
-        Set the position of the corresponding component
-        This should be called by the above @property stuff
-
-        :param value: np.array of the new positions to be updated, with order
-        :param caller: caller name, defined in self.component_names
-        """
-        for p, i in enumerate(range(*self.name_to_index[caller])):
-            self.pos[i] = value[p]
-
-    def get_key_point_transform(self, position, caller):
-        """
-        From position to transformation matrix
-        Apply corresponding scale first
-
-        :param position: len 3 np.array of the new positions to be updated
-        :param caller: caller name, defined in self.component_names
-        """
-        if caller == "arm":
-            return glm.translation(*position)
-        else:
-            return glm.translate(glm.scale(np.eye(4, dtype=np.float32), self.finger_scale, self.finger_scale, self.finger_scale), *position)
-
-    def get_bone_transform(self, start, end, comp_scale, caller):
-        if caller == "arm":
-            finger_scale = 1
-        else:
-            finger_scale = self.finger_scale
-        bone_scale = 0.67 * finger_scale
-
-        direction = end-start
-        m = glm.scale(np.eye(4, dtype=np.float32), bone_scale, 1/comp_scale/2 * np.linalg.norm(direction), bone_scale)  # scale down a little bit
-        m = self.rotate_to_direction(m, direction)
-        m = glm.translate(m, *((start+end)/2))  # to middle point
-        return m
-
-    @staticmethod
-    def rotate_to_direction(m, direction):
-        r = np.eye(4, dtype=np.float32)
-        if direction[0] == 0 and direction[2] == 0:
-            if direction[1] < 0:  # rotate 180 degrees
-                r[0, 0] = -1
-                r[1, 1] = -1
-
-            # else if direction.y >= 0, leave transform as the identity matrix.
-        else:
-            def normalize(x):
-                n = np.linalg.norm(x)
-                return x/n
-            new_y = normalize(direction)
-            new_z = normalize(np.cross(new_y, np.array([0, 1, 0])))
-            new_x = normalize(np.cross(new_y, new_z))
-
-            r[:3, 0] = new_x
-            r[:3, 1] = new_y
-            r[:3, 2] = new_z
-        m = np.dot(m, r.T)  # translated
-        return m
-
-    def draw(self):
-        """
-        Draw the hand in app event loop
-        """
-        c = self.key_point
-        b = self.bone
-        for i, name in enumerate(self.component_names):
-            positions = getattr(self, name)
-            show_bone = self.show_type == 0 or self.show_type == 2
-            show_key = self.show_type == 1 or self.show_type == 2
-            if show_bone:
-                for i in range(len(positions)-1):
-                    # iterate through all positions except last
-                    start = positions[i]
-                    end = positions[i+1]
-                    b.transform = self.get_bone_transform(start, end, b.global_scale, name)
-                    b.draw()
-            if show_key:
-                for v in positions:
-                    c.transform = self.get_key_point_transform(v, name)
-                    c.draw()
-
-    def resize(self, width, height):
-        """
-        Resize according to window size
-        """
-        self.key_point.resize(width, height)
-        self.bone.resize(width, height)
-
-    def store_pos(self, leap_json, index):
-        """
-        Update pos list by Leap Motion Websocket json object
-        Extract hand #index in the json obj and their corresponding pointables
-
-        :param leap_json: raw json from Leap Motion Websocket
-        "param index": hand #index in the json obj
-        """
-
-        # log.info(f"Extracting hand info at index: {index}")
-        hand_json = leap_json["hands"][index]
-        hand_id = hand_json["id"]
-        pointables = [p for p in leap_json["pointables"] if p["handId"] == hand_id]
-        pointables = sorted(pointables, key=lambda x: x["type"])  # from thumb to pinky
-        assert len(pointables) == len(self.finger_names)
-
-        # log.info(f"Getting hand_json: {hand_json}")
-        # log.info(f"Getting sorted pointables: {pointables}")
-
-        arm = np.array([hand_json[name] for name in self.arm_pos_names]) / 100
-        self.arm = arm
-        for i, name in enumerate(self.finger_names):
-
-            time.sleep(0)
-            finger_json = pointables[i]
-            finger = np.array([finger_json[name] for name in self.finger_pos_names]) / 100
-
-            setattr(self, name, finger)
-
-    @property
-    def formatted_data(self):
-        obj = {name: {n: v.tolist() for n, v in zip(self.name_to_pos_names[name], getattr(self, name))} for name in self.component_names}
-        return obj
-
-    def __str__(self):
-        return self.__repr__()
-
-    def __repr__(self):
-        return json.dumps(self.formatted_data)
+from log import log
 
 
 def render(interactive=False):
@@ -361,7 +20,7 @@ def render(interactive=False):
     config = app.configuration.Configuration()
     config.samples = 16
     console = app.Console(rows=32, cols=80, scale=3, color=(1, 1, 1, 1))
-    global window # to be used to close the window
+    global window  # to be used to close the window
     window = app.Window(width=console.cols*console.cwidth*console.scale, height=console.rows*console.cheight*console.scale, color=(0.3, 0.3, 0.3, 1), config=config)
 
     @window.timer(1/60.0)
@@ -382,7 +41,7 @@ def render(interactive=False):
         console.write("-------------------------------------------------------")
 
         # Rotate cube
-        for hand in hand_pool:
+        for hand in gesture.hand_pool:
             model = hand.key_point.program["u_model"].reshape(4, 4)
             glm.rotate(model, 1, 0, 0, 1)
             glm.rotate(model, 1, 0, 1, 0)
@@ -398,12 +57,12 @@ def render(interactive=False):
 
         console.draw()
 
-        for hand in hand_pool:
+        for hand in gesture.hand_pool:
             hand.draw()
 
     @window.event
     def on_resize(width, height):
-        for hand in hand_pool:
+        for hand in gesture.hand_pool:
             hand.resize(width, height)
 
     @window.event
@@ -423,7 +82,7 @@ def render(interactive=False):
         global update_hand_obj, stop_websocket
         'A character has been typed'
         if text == "v":
-            for hand in hand_pool:
+            for hand in gesture.hand_pool:
                 hand.show_type += 1
                 hand.show_type %= 3
         elif text == 'p':
@@ -469,8 +128,8 @@ def sample():
                         # log.info(f"Getting {len(msg['hands'])} hands")
                         # ! transforming millimeters to meters
                         start = time.perf_counter()
-                        for i in range(min(len(msg["hands"]), len(hand_pool))):
-                            hand_pool[i].store_pos(msg, i)
+                        for i in range(min(len(msg["hands"]), len(gesture.hand_pool))):
+                            gesture.update(msg, i)
                         end = time.perf_counter()
                         # log.info(f"Takes {end-start} to complete the extraction task")
                     # else:
@@ -496,7 +155,7 @@ def main():
 stop_websocket = False
 update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
-hand_pool = [Hand() for i in range(2)]
+gesture = GestureHelper()
 
 if __name__ == "__main__":
     main()
