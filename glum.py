@@ -4,12 +4,12 @@ import asyncio
 import numpy as np
 from glumpy import app, gl, glm, gloo, __version__
 import concurrent.futures
-from glumpy.geometry import colorcube
 import time
+from threading import Thread, Lock
 
 
 class HollowCube:
-    def __init__(self, u_view, transform, should_hollow=True):
+    def __init__(self, u_view, transform):
         vertex = """
 uniform mat4   u_model;         // Model matrix
 uniform mat4   u_transform;     // Transform matrix
@@ -106,13 +106,16 @@ class Hand:
     def __init__(self):
         # the names of the fingers, with order
         self.finger_names = ["thumb", "index", "middle", "ring", "pinky"]
+        self.arm_names = ["arm"]
         # all components of a hand, including arm, fingers
-        self.component_names = ["arm"] + self.finger_names
+        self.component_names = self.arm_names + self.finger_names
         # Leap Motion subscription of arm keypoints
         self.arm_pos_names = ["elbow", "wrist", "palmPosition"]
         # Leap Motion subscription of finger keypoints
         # metacarpal, proximal, middle, distal
         self.finger_pos_names = ["carpPosition", "mcpPosition", "pipPosition", "dipPosition", "btipPosition"]
+        self.name_to_pos_names = {**{name: self.arm_pos_names for name in self.arm_names}, **{name: self.finger_pos_names for name in self.finger_names}}
+
         # number of key points of the fingers
         self.finger_key_pt_count = len(self.finger_pos_names) * len(self.finger_names)
         # number of key points of the arm
@@ -126,7 +129,7 @@ class Hand:
         self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
         self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
 
-        self.show_type = 0
+        self.show_type = 2
 
         # mapper from all finger names and "arm" to their index in the position list
         self.name_to_index = {}
@@ -332,8 +335,20 @@ class Hand:
 
             setattr(self, name, finger)
 
+    @property
+    def formatted_data(self):
+        obj = {name: {n: v.tolist() for n, v in zip(self.name_to_pos_names[name], getattr(self, name))} for name in self.component_names}
+        return obj
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return json.dumps(self.formatted_data)
+
 
 def render(interactive=False):
+
     print(f"Runnning glfw renderer")
 
     app.use("glfw")
@@ -397,11 +412,17 @@ def render(interactive=False):
 
     @window.event
     def on_character(text):
+        global update_hand_obj, stop_websocket
         'A character has been typed'
         if text == "v":
             for hand in hand_pool:
                 hand.show_type += 1
                 hand.show_type %= 3
+        elif text == 'p':
+            update_hand_obj = not update_hand_obj
+
+    sampler_thread = Thread(target=sample)
+    sampler_thread.start()
 
     window.attach(console)
     app.run(framerate=60, interactive=interactive)
@@ -410,9 +431,9 @@ def render(interactive=False):
 
 
 def sample(interactive=False):
-    global stop_websocket
 
     async def leap_sampler():
+        global stop_websocket, update_hand_obj
         uri = "ws://localhost:6437/v7.json"
         async with websockets.connect(uri) as ws:
             await ws.send(json.dumps({"focused": True}))
@@ -432,7 +453,7 @@ def sample(interactive=False):
 
                 msg = json.loads(msg)
                 if "timestamp" in msg:
-                    if len(msg["hands"]) > 0:
+                    if len(msg["hands"]) > 0 and update_hand_obj:
                         # print(f"Getting {len(msg['hands'])} hands")
                         # ! transforming millimeters to meters
                         start = time.perf_counter()
@@ -459,18 +480,14 @@ def sample(interactive=False):
 
 
 def main():
-
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-    loop = asyncio.get_event_loop()
-    tasks = asyncio.gather(loop.run_in_executor(pool, sample), loop.run_in_executor(pool, render))
-    loop.run_until_complete(tasks)
-    # render(interactive=True)
-    # run_demo(interactive=True)
+    render(interactive=True)
 
 
 # ! the signaler of the two threads, updated by renderer, used by sampler
 stop_websocket = False
+update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
 hand_pool = [Hand() for i in range(2)]
 
-main()
+if __name__ == "__main__":
+    main()
