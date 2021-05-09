@@ -6,6 +6,8 @@ Based on `WebSocket`.
 
 All python files except `glum.py` ARE NOT PART OF THE DRIVER, THEY'RE JUST FOR FUN.
 
+![demo](readme.assets/demo.gif)
+
 ## Quick Start
 
 ### Python Setup
