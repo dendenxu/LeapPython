@@ -5,7 +5,6 @@ import time
 from threading import Thread, Lock
 
 from glumpy import app, gl, glm, gloo, __version__
-from hollowcube import HollowCube
 from hand import Hand
 from gesture import GestureHelper
 

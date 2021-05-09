@@ -1,5 +1,5 @@
 from glumpy import app, gl, glm, gloo, __version__
-from hollowcube import HollowCube
+from cube import HollowCube
 import numpy as np
 import json
 import time
