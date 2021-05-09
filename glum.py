@@ -9,7 +9,7 @@ import time
 
 
 class HollowCube:
-    def __init__(self, u_view, transform):
+    def __init__(self, u_view, transform, should_hollow):
         vertex = """
 uniform mat4   u_model;         // Model matrix
 uniform mat4   u_transform;     // Transform matrix
@@ -30,6 +30,7 @@ void main()
 """
 
         fragment = """
+uniform int u_should_hollow;
 varying vec4 v_color;    // Interpolated fragment color (in)
 varying vec3 v_position; // Interpolated vertex position (in)
 void main()
@@ -41,14 +42,19 @@ void main()
     float b2 = 0.76;
     float b3 = 0.98;
 
-    if ((xy < b1) && (xz < b1) && (yz < b1))
-        discard;
-    else if ((xy < b2) && (xz < b2) && (yz < b2))
-        gl_FragColor = vec4(0,0,0,1);
-    else if ((xy > b3) || (xz > b3) || (yz > b3))
-        gl_FragColor = vec4(0,0,0,1);
-    else
+    if (u_should_hollow==0) {
         gl_FragColor = v_color;
+    } else {
+        if ((xy < b1) && (xz < b1) && (yz < b1)) {
+                discard;
+        }
+        else if ((xy < b2) && (xz < b2) && (yz < b2))
+            gl_FragColor = vec4(0,0,0,1);
+        else if ((xy > b3) || (xz > b3) || (yz > b3))
+            gl_FragColor = vec4(0,0,0,1);
+        else
+            gl_FragColor = v_color;
+    }
 }
 """
         # structured data type
@@ -73,13 +79,15 @@ void main()
         cube = gloo.Program(vertex, fragment)
         cube.bind(V)
 
+        self.global_scale = 0.1
+
         # starting position
-        model = glm.rotate(np.eye(4, dtype=np.float32), 40, 0, 0, 1)
-        model = glm.rotate(model, 30, 1, 0, 0)
-        model = glm.scale(model, 0.1, 0.1, 0.1)
+        model = glm.scale(np.eye(4, dtype=np.float32), self.global_scale, self.global_scale, self.global_scale)
         cube['u_model'] = model
         cube['u_transform'] = transform
         cube['u_view'] = u_view
+        # ! IS THIS A BUG? CANNOT USE BOOL IN GLSL SHADER
+        cube['u_should_hollow'] = np.uint32(should_hollow)
 
         self.program = cube
         self.transform = transform
@@ -106,7 +114,8 @@ class Hand:
         # Leap Motion subscription of arm keypoints
         self.arm_pos_names = ["elbow", "wrist", "palmPosition"]
         # Leap Motion subscription of finger keypoints
-        self.finger_pos_names = ["btipPosition", "carpPosition", "dipPosition", "mcpPosition", "pipPosition", "tipPosition"]
+        # metacarpal, proximal, middle, distal
+        self.finger_pos_names = ["carpPosition", "mcpPosition", "pipPosition", "dipPosition", "btipPosition"]
         # number of key points of the fingers
         self.finger_key_pt_count = len(self.finger_pos_names) * len(self.finger_names)
         # number of key points of the arm
@@ -117,7 +126,8 @@ class Hand:
         self.finger_scale = 0.5
 
         # actual OpenGL object wrapper of all key points, reused
-        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
+        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32), True)
+        self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32), False)
 
         # mapper from all finger names and "arm" to their index in the position list
         self.name_to_index = {}
@@ -216,34 +226,80 @@ class Hand:
         for p, i in enumerate(range(*self.name_to_index[caller])):
             self.pos[i] = value[p]
 
-    def get_transform(self, value, caller):
+    def get_key_point_transform(self, position, caller):
         """
         From position to transformation matrix
         Apply corresponding scale first
 
-        :param value: len 3 np.array of the new positions to be updated
+        :param position: len 3 np.array of the new positions to be updated
         :param caller: caller name, defined in self.component_names
         """
         if caller == "arm":
-            return glm.translation(*value)
+            return glm.translation(*position)
         else:
-            return glm.translate(glm.scale(np.eye(4, dtype=np.float32), *[self.finger_scale for _ in range(3)]), *value)
+            return glm.translate(glm.scale(np.eye(4, dtype=np.float32), self.finger_scale, self.finger_scale, self.finger_scale), *position)
+
+    def get_bone_transform(self, start, end, comp_scale, caller):
+        if caller == "arm":
+            finger_scale = 1
+        else:
+            finger_scale = self.finger_scale
+        bone_scale = 0.67 * finger_scale
+
+        direction = end-start
+        m = glm.scale(np.eye(4, dtype=np.float32), bone_scale, 1/comp_scale/2 * np.linalg.norm(direction), bone_scale)  # scale down a little bit
+        m = self.rotate_to_direction(m, direction)
+        m = glm.translate(m, *((start+end)/2))  # to middle point
+        return m
+
+    @staticmethod
+    def rotate_to_direction(m, direction):
+        r = np.eye(4, dtype=np.float32)
+        if direction[0] == 0 and direction[2] == 0:
+            if direction[1] < 0:  # rotate 180 degrees
+                r[0, 0] = -1
+                r[1, 1] = -1
+
+            # else if direction.y >= 0, leave transform as the identity matrix.
+        else:
+            def normalize(x):
+                n = np.linalg.norm(x)
+                return x/n
+            new_y = normalize(direction)
+            new_z = normalize(np.cross(new_y, np.array([0, 1, 0])))
+            new_x = normalize(np.cross(new_y, new_z))
+
+            r[:3, 0] = new_x
+            r[:3, 1] = new_y
+            r[:3, 2] = new_z
+        m = np.dot(m, r.T)  # translated
+        return m
 
     def draw(self):
         """
         Draw the hand in app event loop
         """
         c = self.key_point
+        b = self.bone
         for i, name in enumerate(self.component_names):
-            for v in getattr(self, name):
-                c.transform = self.get_transform(v, name)
+            positions = getattr(self, name)
+            for v in positions:
+                c.transform = self.get_key_point_transform(v, name)
                 c.draw()
+
+            for i in range(len(positions)-1):
+                # iterate through all positions except last
+                start = positions[i]
+                end = positions[i+1]
+                b.transform = self.get_bone_transform(start, end, b.global_scale, name)
+                b.draw()
 
     def resize(self, width, height):
         """
         Resize according to window size
         """
         self.key_point.resize(width, height)
+        self.bone.resize(width, height)
 
     def store_pos(self, leap_json, index):
         """
@@ -305,6 +361,10 @@ def render(interactive=False):
             glm.rotate(model, 1, 0, 0, 1)
             glm.rotate(model, 1, 0, 1, 0)
             hand.key_point.program['u_model'] = model
+
+            model = hand.bone.program["u_model"].reshape(4, 4)
+            glm.rotate(model, 1, 0, 1, 0)
+            hand.bone.program['u_model'] = model
 
     @window.event
     def on_draw(dt):
@@ -395,6 +455,7 @@ def main():
     loop.run_until_complete(tasks)
     # render(interactive=True)
     # run_demo(interactive=True)
+
 
 # ! the signaler of the two threads, updated by renderer, used by sampler
 stop_websocket = False
