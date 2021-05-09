@@ -15,7 +15,7 @@ First, you should have a `python 3` installation available, `conda` or just `pyt
 Then, install the required package listed in `requirements.txt` by:
 
 ```shell
-pip install -r requirements
+pip install -r requirements.txt
 ```
 
 For **Windows** user, the `glumpy` package need to be fixed to properly display fonts.
