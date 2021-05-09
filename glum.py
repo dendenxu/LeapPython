@@ -84,66 +84,59 @@ void main()
         self.program = cube
         self.transform = transform
 
-    def on_draw(self):
+    def draw(self):
         # print(f"Redrawing...")
 
         self.program['u_transform'] = self.transform
 
         # Filled cube
-        # gl.glDisable(gl.GL_BLEND)
-        # gl.glEnable(gl.GL_DEPTH_TEST)
-        # gl.glEnable(gl.GL_POLYGON_OFFSET_FILL)
         self.program['u_color'] = 1, 1, 1, 1
         self.program.draw(gl.GL_TRIANGLES, self.I)
 
-        # Outlined cube
-        # gl.glDisable(gl.GL_POLYGON_OFFSET_FILL)
-        # gl.glEnable(gl.GL_BLEND)
-        # gl.glDepthMask(gl.GL_FALSE)
-        # self.globj['u_color'] = 0, 0, 0, 1
-        # self.globj.draw(gl.GL_LINES, self.O)
-        # gl.glDepthMask(gl.GL_TRUE)
-
-    def on_resize(self, width, height):
+    def resize(self, width, height):
         self.program['u_projection'] = glm.perspective(45.0, width / float(height), 2.0, 200.0)
 
 
 class Hand:
     def __init__(self):
+        # the names of the fingers, with order
         self.finger_names = ["thumb", "index", "middle", "ring", "pinky"]
-        self.component_names = self.finger_names + ["arm"]
+        # all components of a hand, including arm, fingers
+        self.component_names = ["arm"] + self.finger_names
+        # Leap Motion subscription of arm keypoints
         self.arm_pos_names = ["elbow", "wrist", "palmPosition"]
+        # Leap Motion subscription of finger keypoints
         self.finger_pos_names = ["btipPosition", "carpPosition", "dipPosition", "mcpPosition", "pipPosition", "tipPosition"]
-        self.hand_joint_count = len(self.finger_pos_names) * len(self.finger_names)
-        self.arm_joint_count = len(self.arm_pos_names)
+        # number of key points of the fingers
+        self.finger_key_pt_count = len(self.finger_pos_names) * len(self.finger_names)
+        # number of key points of the arm
+        self.arm_key_pt_count = len(self.arm_pos_names)
+        # global view transformation
         self.u_view = glm.translation(0, -2, -10)
+        # finger key point scale relative to arm
         self.finger_scale = 0.5
-        # self.cubes = [RotatingCube(self.u_view, glm.translation(1*(i - (self.arm_joint_count-1)/2), 0, 0)) for i in range(self.arm_joint_count)]
-        # self.cubes += [
-        #     RotatingCube(
-        #         self.u_view,
-        #         glm.translate(
-        #             glm.scale(np.eye(4, dtype=np.float32), *[self.finger_scale for _ in range(3)]),
-        #             0.5*(i - (self.hand_joint_count-1)/2), 2, 0)
 
-        #     )
-        #     for i in range(self.hand_joint_count)
-        # ]
-        self.cube = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
+        # actual OpenGL object wrapper of all key points, reused
+        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
 
+        # mapper from all finger names and "arm" to their index in the position list
         self.name_to_index = {}
         arm_name_count = len(self.arm_pos_names)
         finger_name_count = len(self.finger_pos_names)
         index = 0
         self.name_to_index["arm"] = [index, index+arm_name_count]
         index += arm_name_count
-
         for name in self.finger_names:
             self.name_to_index[name] = [index, index+finger_name_count]
             index += finger_name_count
 
-        self.pos = [np.zeros(3, np.float32) for _ in range(self.hand_joint_count+self.arm_joint_count)]
+        # keypoint position list, queried every frame update for new keypoint position
+        # websockt process should update this list instead of the raw OpenGL obj
+        self.pos = [np.zeros(3, np.float32) for _ in range(self.finger_key_pt_count+self.arm_key_pt_count)]
 
+    # TODO: find a way to optimize this implementation
+    # getter and setter logic already extracted
+    # tried to use "inspect" package, too slow
     @property
     def arm(self):
         return self.getter("arm")
@@ -193,51 +186,74 @@ class Hand:
         self.setter(value, "pinky")
 
     def position(self, start=0, end=None):
-        # print(f"Getting position from {start} to {end} with transform: {[c.transform for c in self.cubes[start:end]]}")
+        """
+        Evaluate start and end to Python list slice
+
+        :param start: starting position
+        :param end: ending position
+        :return: correpsonding pos in the position list
+        """
         return self.pos[start:end]
-        # return list(map(lambda x: x.transform[:-1, -1], ))
 
     def getter(self, caller):
+        """
+        Get the position of the corresponding component
+        This should be called by the above @property stuff
+
+        :param caller: caller name, defined in self.component_names
+        :return: np.array of positions, with order
+        """
         return self.position(*self.name_to_index[caller])
 
     def setter(self, value, caller):
+        """
+        Set the position of the corresponding component
+        This should be called by the above @property stuff
+
+        :param value: np.array of the new positions to be updated, with order
+        :param caller: caller name, defined in self.component_names
+        """
         for p, i in enumerate(range(*self.name_to_index[caller])):
             self.pos[i] = value[p]
 
     def get_transform(self, value, caller):
+        """
+        From position to transformation matrix
+        Apply corresponding scale first
+
+        :param value: len 3 np.array of the new positions to be updated
+        :param caller: caller name, defined in self.component_names
+        """
         if caller == "arm":
             return glm.translation(*value)
         else:
             return glm.translate(glm.scale(np.eye(4, dtype=np.float32), *[self.finger_scale for _ in range(3)]), *value)
 
-    def on_draw(self):
-        # start = time.perf_counter()
-        # self.load_pos_to_gl()
-        # end = time.perf_counter()
-        # print(f"It takes {end-start} to load pos info to OpenGL")
-        # for cube in self.cubes:
-        #     cube.on_draw()
-        # start = end
-        # end = time.perf_counter()
-        # print(f"It takes {end-start} to draw the joints with OpenGL")
-        c = self.cube
-        # for v in self.arm_pos:
-        #     c.transform = self.get_transform(v, "arm")
-        #     c.on_draw()
+    def draw(self):
+        """
+        Draw the hand in app event loop
+        """
+        c = self.key_point
         for i, name in enumerate(self.component_names):
             for v in getattr(self, name):
                 c.transform = self.get_transform(v, name)
-                c.on_draw()
+                c.draw()
 
-    def on_resize(self, width, height):
-        self.cube.on_resize(width, height)
-
-    # def load_pos_to_gl(self):
-    #     self.arm = self.arm_pos
-    #     for i, name in enumerate(self.finger_names):
-    #         setattr(self, name, self.finger_pos[i])
+    def resize(self, width, height):
+        """
+        Resize according to window size
+        """
+        self.key_point.resize(width, height)
 
     def store_pos(self, leap_json, index):
+        """
+        Update pos list by Leap Motion Websocket json object
+        Extract hand #index in the json obj and their corresponding pointables
+
+        :param leap_json: raw json from Leap Motion Websocket
+        "param index": hand #index in the json obj
+        """
+
         # print(f"Extracting hand info at index: {index}")
         hand_json = leap_json["hands"][index]
         hand_id = hand_json["id"]
@@ -257,11 +273,6 @@ class Hand:
             finger = np.array([finger_json[name] for name in self.finger_pos_names]) / 100
 
             setattr(self, name, finger)
-
-
-stop = False
-
-hand_pool = [Hand() for i in range(2)]
 
 
 def render(interactive=False):
@@ -290,10 +301,10 @@ def render(interactive=False):
 
         # Rotate cube
         for hand in hand_pool:
-            model = hand.cube.program["u_model"].reshape(4, 4)
+            model = hand.key_point.program["u_model"].reshape(4, 4)
             glm.rotate(model, 1, 0, 0, 1)
             glm.rotate(model, 1, 0, 1, 0)
-            hand.cube.program['u_model'] = model
+            hand.key_point.program['u_model'] = model
 
     @window.event
     def on_draw(dt):
@@ -302,23 +313,23 @@ def render(interactive=False):
         console.draw()
 
         for hand in hand_pool:
-            hand.on_draw()
+            hand.draw()
 
     @window.event
     def on_resize(width, height):
         for hand in hand_pool:
-            hand.on_resize(width, height)
+            hand.resize(width, height)
 
     @window.event
     def on_init():
         gl.glEnable(gl.GL_DEPTH_TEST)
-        # gl.glPolygonOffset(1, 1)
-        # gl.glEnable(gl.GL_LINE_SMOOTH)
+        gl.glEnable(gl.GL_LINE_SMOOTH)
+        gl.glPolygonOffset(1, 1)
 
     @window.event
     def on_close():
-        global stop
-        stop = True
+        global stop_websocket
+        stop_websocket = True
         print("The user closed the renderer window")
 
     window.attach(console)
@@ -327,19 +338,19 @@ def render(interactive=False):
     print(f"The renderer app has exited")
 
 
-def run_demo(interactive=False):
-    async def demo():
-        global cubes
+def sample(interactive=False):
+    global stop_websocket
+
+    async def leap_sampler():
         uri = "ws://localhost:6437/v7.json"
         async with websockets.connect(uri) as ws:
             await ws.send(json.dumps({"focused": True}))
             await ws.send(json.dumps({"background": True}))
             await ws.send(json.dumps({"optimizeHMD": False}))
-            # await ws.send(json.dumps({"enableGestures": False}))
             print(f"Focused on the leap motion controller...")
             end = start = previous = time.perf_counter()
 
-            while not stop:
+            while not stop_websocket:
                 # always waiting for messages
                 # await asyncio.sleep(1/60)
                 msg = await ws.recv()
@@ -372,7 +383,7 @@ def run_demo(interactive=False):
         loop = asyncio.get_event_loop()
     else:
         loop = asyncio.new_event_loop()
-    loop.run_until_complete(demo())
+    loop.run_until_complete(leap_sampler())
     print(f"Sampler runner thread exited")
 
 
@@ -380,10 +391,14 @@ def main():
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
     loop = asyncio.get_event_loop()
-    tasks = asyncio.gather(loop.run_in_executor(pool, run_demo), loop.run_in_executor(pool, render))
+    tasks = asyncio.gather(loop.run_in_executor(pool, sample), loop.run_in_executor(pool, render))
     loop.run_until_complete(tasks)
     # render(interactive=True)
     # run_demo(interactive=True)
 
+# ! the signaler of the two threads, updated by renderer, used by sampler
+stop_websocket = False
+# * the actual hand pool, stores global hand object, updated by sampler, used by renderer
+hand_pool = [Hand() for i in range(2)]
 
 main()
