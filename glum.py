@@ -44,22 +44,14 @@ def render(interactive=False):
     def rotate(dt):
         # Rotate cube
         for hand in hand_pool:
-            model = hand.key_point.program["u_model"].reshape(4, 4)
+            model = hand.key_point.model
             glm.rotate(model, 1, 0, 0, 1)
             glm.rotate(model, 1, 0, 1, 0)
-            hand.key_point.program['u_model'] = model
+            hand.key_point.model = model
 
-            model = hand.bone.program["u_model"].reshape(4, 4)
+            model = hand.bone.model
             glm.rotate(model, 1, 0, 1, 0)
-            hand.bone.program['u_model'] = model
-
-    @window.timer(1/60.0)
-    def parse_and_send(dt):
-        # log.info(f"Parsing position data...")
-        signal = parser.parse()
-        # log.info(f"Getting parser result: {signal}")
-        beacon.send(signal)
-        pass
+            hand.bone.model = model
 
     @window.event
     def on_draw(dt):
@@ -84,13 +76,13 @@ def render(interactive=False):
 
     @window.event
     def on_close():
-        global stop_websocket
-        stop_websocket = True
+        global stop_websocket, stop_parser
+        stop_websocket = stop_parser = True
         log.info("The user closed the renderer window")
 
     @window.event
     def on_character(text):
-        global update_hand_obj, stop_websocket
+        global update_hand_obj
         'A character has been typed'
         if text == "v":
             for hand in hand_pool:
@@ -102,6 +94,9 @@ def render(interactive=False):
     sampler_thread = Thread(target=sample)
     sampler_thread.start()
 
+    parser_thread = Thread(target=parse)
+    parser_thread.start()
+
     window.attach(console)
     if interactive:
         log.info(f"Running in interactive mode, run Python here freely")
@@ -110,6 +105,25 @@ def render(interactive=False):
     app.run(framerate=60, interactive=interactive)
 
     log.info(f"The render function returned")
+
+
+def parse():
+    def parse_and_send():
+        # log.info(f"Parsing position data...")
+        signal = parser.parse()
+        # log.info(f"Getting parser result: {signal}")
+        beacon.send(signal)
+    global stop_parser
+
+    log.info(f"Parser thread opened")
+    start = time.perf_counter()
+    while not stop_parser:
+        end = time.perf_counter()
+        time.sleep(max(0, 1/60 - end + start))
+        start = time.perf_counter()
+        parse_and_send()
+
+    log.info(f"Parser thread exited")
 
 
 def sample():
@@ -167,6 +181,7 @@ def main():
 
 # ! the signaler of the two threads, updated by renderer, used by sampler
 stop_websocket = False
+stop_parser = False
 update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
 hand_pool = [Hand() for i in range(2)]

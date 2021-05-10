@@ -83,10 +83,26 @@ void main()
         self.program = cube
         self.transform = transform
 
+    @property
+    def transform(self):
+        return self.program['u_transform'].reshape(4, 4)
+
+    @transform.setter
+    def transform(self, value):
+        self.program['u_transform'] = value
+
+    @property
+    def model(self):
+        return self.program['u_model'].reshape(4, 4)
+
+    @model.setter
+    def model(self, value):
+        self.program['u_model'] = value
+
     def draw(self):
         # log.info(f"Redrawing...")
 
-        self.program['u_transform'] = self.transform
+        # self.program['u_transform'] = self.transform
 
         # Filled cube
         self.program['u_color'] = 1, 1, 1, 1
