@@ -252,7 +252,7 @@ class Hand:
     def formatted_data(self):
         obj = {name: {n: v.tolist() for n, v in zip(self.name_to_pos_names[name], getattr(self, name))} for name in self.component_names}
         obj["timestamp"] = self.timestamp
-        obj["palm_normal"] = self.palm_normal
+        obj["palm_normal"] = self.palm_normal.tolist()
         return obj
 
     def __str__(self):

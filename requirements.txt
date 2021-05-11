@@ -2,4 +2,7 @@ websockets
 numpy
 pyopengl
 cython
+coloredlogs
+pyserial
 glumpy
+glfw

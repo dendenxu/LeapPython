@@ -90,12 +90,19 @@ def render(interactive=False):
                 hand.show_type %= 3
         elif text == 'p':
             update_hand_obj = not update_hand_obj
-
-    sampler_thread = Thread(target=sample)
-    sampler_thread.start()
-
-    parser_thread = Thread(target=parse)
-    parser_thread.start()
+        elif text == "w":
+            beacon.send("F")
+        elif text == "s":
+            beacon.send("B")
+        elif text == "a":
+            beacon.send("L")
+        elif text == "d":
+            beacon.send("R")
+        elif text == " ":
+            beacon.send("S")
+        else:
+            beacon.send(text)
+        log.info(f"Key: {text}")
 
     window.attach(console)
     if interactive:
@@ -119,9 +126,9 @@ def parse():
     start = time.perf_counter()
     while not stop_parser:
         end = time.perf_counter()
-        time.sleep(max(0, 1/60 - end + start))
+        time.sleep(max(0, 1/8 - end + start))
         start = time.perf_counter()
-        parse_and_send()
+        if update_hand_obj: parse_and_send()
 
     log.info(f"Parser thread exited")
 
@@ -177,6 +184,11 @@ def sample():
 
 def main():
     render(interactive=True)
+    sampler_thread = Thread(target=sample)
+    sampler_thread.start()
+
+    parser_thread = Thread(target=parse)
+    parser_thread.start()
 
 
 # ! the signaler of the two threads, updated by renderer, used by sampler

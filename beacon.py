@@ -4,7 +4,7 @@ import serial
 
 
 class Beacon:
-    def __init__(self, port="COM4", baudrate=115200):
+    def __init__(self, port="COM6", baudrate=115200):
         self.ser = serial.Serial()
         self.ser.port = port
         self.ser.baudrate = baudrate
@@ -16,3 +16,15 @@ class Beacon:
 
     def send(self, signal):
         self.ser.write(signal.encode())
+
+
+# Slave:
+# import serial
+# ser = serial.Serial()
+# ser.port = "/dev/slave"
+# ser.baudrate = 115200
+# ser.timeout = None
+# ser.open()
+# while True:
+#     d = ser.readline()
+#     print(d.decode())

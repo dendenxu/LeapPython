@@ -14,7 +14,7 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base = hand.palm.copy()  # palm position
+        self.base = np.array([0,0,0])  # palm position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
 
@@ -49,8 +49,8 @@ class GestureParser:
             acc = (palm - self.base)[[0, 2]]
             cube_scale *= 1.5
             # log.info(f"Adding force: {acc}")
-        else:
-            self.base = palm
+        #else:
+            #self.base = palm
 
         m = rotate_to_2directions(np.eye(4, dtype=np.float32), palm_normal, palm-wrist)
         m = glm.scale(m, cube_scale, cube_scale, cube_scale)
@@ -58,4 +58,26 @@ class GestureParser:
         # log.info(f"New transformation:\n{m}")
         self.debug_cube.transform = m
 
-        return f"Force: x:{acc[0]}, z:{acc[1]}\n"
+        result = ""
+        Z_thresh = 0.5
+        X_thresh = 0.5
+        stopx = False
+        stopz = False
+        if acc[1] < -Z_thresh:
+            result += "F"
+        elif acc[1] > Z_thresh:
+            result += "B"
+        else:
+            stopz = True
+
+        if acc[0] < -X_thresh:
+            result += "L"
+        elif acc[0] > X_thresh:
+            result += "R"
+        else:
+            stopx = True
+
+        if stopx and stopz:
+            result = "S"
+
+        return result
