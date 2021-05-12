@@ -16,15 +16,3 @@ class Beacon:
 
     def send(self, signal):
         self.ser.write(signal.encode())
-
-
-# Slave:
-# import serial
-# ser = serial.Serial()
-# ser.port = "/dev/slave"
-# ser.baudrate = 115200
-# ser.timeout = None
-# ser.open()
-# while True:
-#     d = ser.readline()
-#     print(d.decode())

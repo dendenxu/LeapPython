@@ -38,7 +38,7 @@ class Hand:
         self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
         self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
 
-        self.show_type = 0
+        self.show_type = 1
 
         # mapper from all finger names and "arm" to their index in the position list
         self.name_to_index = {}
@@ -53,7 +53,7 @@ class Hand:
 
         # keypoint position list, queried every frame update for new keypoint position
         # websockt process should update this list instead of the raw OpenGL obj
-        self.pos = [np.zeros(3, np.float32) for _ in range(self.finger_key_pt_count+self.arm_key_pt_count)]
+        self.pos = np.array([np.zeros(3, np.float32) for _ in range(self.finger_key_pt_count+self.arm_key_pt_count)])
 
         # empty gesture history
         self.history = []
@@ -237,7 +237,10 @@ class Hand:
 
             setattr(self, name, finger)
 
-        # self.update_history()
+        self.update_history()
+
+    def clean(self):
+        self.pos = np.zeros_like(self.pos)
 
     def update_history(self):
         self.history.append(

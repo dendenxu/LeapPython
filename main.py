@@ -90,19 +90,20 @@ def render(interactive=False):
                 hand.show_type %= 3
         elif text == 'p':
             update_hand_obj = not update_hand_obj
-        elif text == "w":
-            beacon.send("F")
-        elif text == "s":
-            beacon.send("B")
-        elif text == "a":
-            beacon.send("L")
-        elif text == "d":
-            beacon.send("R")
-        elif text == " ":
-            beacon.send("S")
-        else:
-            beacon.send(text)
-        log.info(f"Key: {text}")
+        # TODO: Update keyboard mapping here for testing
+        # elif text == "w":
+        #     beacon.send("F")
+        # elif text == "s":
+        #     beacon.send("B")
+        # elif text == "a":
+        #     beacon.send("L")
+        # elif text == "d":
+        #     beacon.send("R")
+        # elif text == " ":
+        #     beacon.send("S")
+        # else:
+        #     beacon.send(text)
+        # log.info(f"Key: {text}")
 
     window.attach(console)
     if interactive:
@@ -128,7 +129,8 @@ def parse():
         end = time.perf_counter()
         time.sleep(max(0, 1/8 - end + start))
         start = time.perf_counter()
-        if update_hand_obj: parse_and_send()
+        if update_hand_obj:
+            parse_and_send()
 
     log.info(f"Parser thread exited")
 
@@ -138,41 +140,57 @@ def sample():
     async def leap_sampler():
         global stop_websocket, update_hand_obj
         uri = "ws://localhost:6437/v7.json"
-        async with websockets.connect(uri) as ws:
-            await ws.send(json.dumps({"focused": True}))
-            await ws.send(json.dumps({"background": True}))
-            await ws.send(json.dumps({"optimizeHMD": False}))
-            log.info(f"Focused on the leap motion controller...")
-            end = start = previous = time.perf_counter()
 
-            while not stop_websocket:
-                # always waiting for messages
-                # await asyncio.sleep(1/60)
-                msg = await ws.recv()
-                current = time.perf_counter()
-                if current - previous < end - start:
-                    # log.info(f"Skipped...")
-                    continue
+        while not stop_websocket:
+            async with websockets.connect(uri) as ws:
+                await ws.send(json.dumps({"focused": True}))
+                await ws.send(json.dumps({"background": True}))
+                await ws.send(json.dumps({"optimizeHMD": False}))
+                log.info(f"Focused on the leap motion controller...")
+                end = start = previous = time.perf_counter()
 
-                msg = json.loads(msg)
-                if "timestamp" in msg:
-                    if len(msg["hands"]) > 0 and update_hand_obj:
-                        # log.info(f"Getting {len(msg['hands'])} hands")
-                        # ! transforming millimeters to meters
+                while not stop_websocket:
+                    # always waiting for messages
+                    # await asyncio.sleep(1/60)
+                    msg = await ws.recv()
+                    current = time.perf_counter()
+                    if current - previous < end - start:
+                        # log.info(f"Skipped...")
+                        continue
+
+                    msg = json.loads(msg)
+                    if "timestamp" in msg:
                         start = time.perf_counter()
-                        for i in range(min(len(msg["hands"]), len(hand_pool))):
-                            if msg["hands"][i]["type"] == "left":
-                                hand_pool[0].store_pos(msg, i)
-                            else:
-                                hand_pool[1].store_pos(msg, i)
-                        end = time.perf_counter()
-                        # log.info(f"Takes {end-start} to complete the extraction task")
-                    # else:
-                        # log.info(f"No hands hans been found")
-                else:
-                    log.info(f"Getting message: {msg}")
+                        left = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "left"]
+                        right = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "right"]
 
-                previous = time.perf_counter()
+                        # ! transforming millimeters to meters
+                        # ! only updating the first hands
+                        if len(left) > 0 and update_hand_obj:
+                            i = left[0]
+                            hand_pool[0].store_pos(msg, i)
+                        else:
+                            hand_pool[0].clean()
+
+                        if len(right) > 0 and update_hand_obj:
+                            i = right[0]
+                            hand_pool[1].store_pos(msg, i)
+                        else:
+                            hand_pool[1].clean()
+
+                        end = time.perf_counter()
+                        # log.info(f"Getting {len(msg['hands'])} hands")
+
+                        # log.info(f"Takes {end-start} to complete the extraction task")
+
+                        # else:
+
+                        # log.info(f"No hands hans been found")
+                    else:
+                        log.info(f"Getting message: {msg}")
+
+                    previous = time.perf_counter()
+                log.info("Reconnecting" if not stop_websocket else "Sampler terminated")
 
         log.info(f"Leap motion sampler is stopped")
 
@@ -183,22 +201,26 @@ def sample():
 
 
 def main():
-    render(interactive=True)
+
     sampler_thread = Thread(target=sample)
     sampler_thread.start()
 
     parser_thread = Thread(target=parse)
     parser_thread.start()
+    render(interactive=True)
 
 
 # ! the signaler of the two threads, updated by renderer, used by sampler
 stop_websocket = False
 stop_parser = False
+stop_beacon = False
 update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
 hand_pool = [Hand() for i in range(2)]
-beacon = Beacon()
+
 parser = GestureParser(hand_pool[1])  # currently only responding to right hand gesture
+
+beacon = Beacon(port="COM31")
 
 if __name__ == "__main__":
     main()

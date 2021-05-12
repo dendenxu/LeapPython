@@ -4,6 +4,7 @@ from hand import Hand
 from cube import HollowCube
 from glumpy import app, gl, glm, gloo, __version__
 from helper import rotate_to_direction, rotate_to_2directions, normal
+import json
 
 
 class GestureParser:
@@ -14,7 +15,7 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base = np.array([0,0,0])  # palm position
+        self.base = np.array([0, 0, 0])  # palm position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
 
@@ -40,17 +41,17 @@ class GestureParser:
         else:
             self.palm_open_count -= 1
 
-        force = self.palm_open_count > 0
+        apply_force = self.palm_open_count > 0
 
-        acc = np.zeros(2, dtype=np.float32)
+        force = np.zeros(2, dtype=np.float32)
         cube_scale = self.cube_scale
 
-        if force:
-            acc = (palm - self.base)[[0, 2]]
+        if apply_force:
+            force = (palm - self.base)[[0, 2]]
             cube_scale *= 1.5
-            # log.info(f"Adding force: {acc}")
-        #else:
-            #self.base = palm
+            # log.info(f"Adding force: {force}")
+        # else:
+        #     self.base = palm
 
         m = rotate_to_2directions(np.eye(4, dtype=np.float32), palm_normal, palm-wrist)
         m = glm.scale(m, cube_scale, cube_scale, cube_scale)
@@ -58,26 +59,29 @@ class GestureParser:
         # log.info(f"New transformation:\n{m}")
         self.debug_cube.transform = m
 
-        result = ""
-        Z_thresh = 0.5
-        X_thresh = 0.5
-        stopx = False
-        stopz = False
-        if acc[1] < -Z_thresh:
-            result += "F"
-        elif acc[1] > Z_thresh:
-            result += "B"
-        else:
-            stopz = True
+        # remapping of force to wheel voltage
+        # ! Assuming Arduino.h: LOW 0x0, HIGH 0x1
+        LOW = 0x0
+        HIGH = 0x1
 
-        if acc[0] < -X_thresh:
-            result += "L"
-        elif acc[0] > X_thresh:
-            result += "R"
-        else:
-            stopx = True
+        # M = np.array([
+        #     [-np.sqrt(3)/2, -np.sqrt(3)/2],
+        #     [-1/2, 1/2]
+        # ]) # Transform from Arduino space to Our space
 
-        if stopx and stopz:
-            result = "S"
+        # M = np.linalg.inv(M) # Transfrom from Out space to Arduino space
 
-        return result
+        M = np.array([
+            [-0.57735027, -1.],
+            [-0.57735027,  1.]
+        ])
+
+        coords = M.dot(force)  # transformed into voltage space
+
+        # log.info(f"Transformed force in arduino space: {coords}")
+
+        msg = {
+            "voltages": np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
+        }
+
+        return json.dumps(msg)+"\n"
