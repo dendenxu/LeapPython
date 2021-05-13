@@ -77,3 +77,32 @@ Typically, you might encounter these problems:
    Go to **Nvidia Control Panel**, navigate to 3D settings, change per app settings and add your `python` to the list, then select `High Performance Processor`.
    This might also be caused by not installing a **good backend** for `glumpy`, install `glfw` by the following [link](https://www.glfw.org/download)
    Check this [link](https://glumpy.readthedocs.io/en/latest/installation.html#backends-requirements) for more information and for a step-by-step 64-bit **Windows** installation guide.
+
+### Bluetooth to Serial Port
+
+If you've got a bluetooth to serial slave device on your Arduino or whatever, you can read on to try connecting to it directly. Otherwise jump to the next small section to see how to simulate the virtaul port and test your output first.
+
+Connect the arduino **BT04** bluetooth to serial device first:
+
+- It's a little bit tricky but I believe you'll first try to search for the bluetooth device with that default name (usually **BT04** or **BT06**)
+- Connect to it using default PIN (you can change the PIN if you have direct serial access to the chip, but that won't be necessary): **1234**
+- After that you'll be able to see some serial port pop out of your system
+  - On **Windows**, check out the **bluetooth serial device** in **Control Panel** for added **BT04 Outgoing Port**
+  - On **\*nix**, `ls /dev/tty.*` for something containing **BT04**
+- Note that the chip will declare connected once the **serial port** mentioned above is opened, not the **bluetooth connection**. So you might still notice a blinking red light even if the pairing is successful
+
+Now you're able to talk to the device using the port mentioned above.
+
+### Virtual Serial Port Testing
+
+This section will be helpful if you want to simulate a serial port interface and check out what you've passed on to the port.
+
+On **Windows**, check out the **com0com** utility by googling it.
+
+Set up the virtual ports and you can read stuff from it using `utils.py`
+
+On **\*nix**, check out **socat**, you can install it using `sudo apt install socat` or `brew install socat`, create a pair of port on `/dev/master` and `/dev/slave` using:
+
+```shell
+socat -d -d pty,link=/dev/master,raw,echo=0 pty,link=/dev/slave,raw,echo=0
+```
