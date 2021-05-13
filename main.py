@@ -1,8 +1,8 @@
 import json
-import websockets
-import asyncio
+import websocket
 import time
 from threading import Thread, Lock
+import threading
 
 from glumpy import app, gl, glm, gloo, __version__
 from hand import Hand
@@ -76,8 +76,7 @@ def render(interactive=False):
 
     @window.event
     def on_close():
-        global stop_websocket, stop_parser
-        stop_websocket = stop_parser = True
+        kill()
         log.info("The user closed the renderer window")
 
     @window.event
@@ -121,7 +120,6 @@ def parse():
         signal = parser.parse()
         # log.info(f"Getting parser result: {signal}")
         beacon.send(signal)
-    global stop_parser
 
     log.info(f"Parser thread opened")
     start = time.perf_counter()
@@ -129,7 +127,7 @@ def parse():
         end = time.perf_counter()
         time.sleep(max(0, 1/8 - end + start))
         start = time.perf_counter()
-        if update_hand_obj:
+        if update_hand_obj and not stop_beacon:
             parse_and_send()
 
     log.info(f"Parser thread exited")
@@ -137,67 +135,80 @@ def parse():
 
 def sample():
 
-    async def leap_sampler():
-        global stop_websocket, update_hand_obj
-        uri = "ws://localhost:6437/v7.json"
-
-        while not stop_websocket:
-            async with websockets.connect(uri) as ws:
-                await ws.send(json.dumps({"focused": True}))
-                await ws.send(json.dumps({"background": True}))
-                await ws.send(json.dumps({"optimizeHMD": False}))
-                log.info(f"Focused on the leap motion controller...")
-                end = start = previous = time.perf_counter()
-
-                while not stop_websocket:
-                    # always waiting for messages
-                    # await asyncio.sleep(1/60)
-                    msg = await ws.recv()
-                    current = time.perf_counter()
-                    if current - previous < end - start:
-                        # log.info(f"Skipped...")
-                        continue
-
-                    msg = json.loads(msg)
-                    if "timestamp" in msg:
-                        start = time.perf_counter()
-                        left = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "left"]
-                        right = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "right"]
-
-                        # ! transforming millimeters to meters
-                        # ! only updating the first hands
-                        if len(left) > 0 and update_hand_obj:
-                            i = left[0]
-                            hand_pool[0].store_pos(msg, i)
-                        else:
-                            hand_pool[0].clean()
-
-                        if len(right) > 0 and update_hand_obj:
-                            i = right[0]
-                            hand_pool[1].store_pos(msg, i)
-                        else:
-                            hand_pool[1].clean()
-
-                        end = time.perf_counter()
-                        # log.info(f"Getting {len(msg['hands'])} hands")
-
-                        # log.info(f"Takes {end-start} to complete the extraction task")
-
-                        # else:
-
-                        # log.info(f"No hands hans been found")
-                    else:
-                        log.info(f"Getting message: {msg}")
-
-                    previous = time.perf_counter()
-                log.info("Reconnecting" if not stop_websocket else "Sampler terminated")
-
-        log.info(f"Leap motion sampler is stopped")
-
     log.info(f"Running demo sampler from leap motion")
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(leap_sampler())
+
+    uri = "ws://localhost:6437/v7.json"
+    global ws
+    ws = websocket.create_connection(uri)
+    ws.send(json.dumps({"focused": True}))
+    ws.send(json.dumps({"background": True}))
+    ws.send(json.dumps({"optimizeHMD": False}))
+
+    log.info(f"Focused on the leap motion controller...")
+    end = start = previous = time.perf_counter()
+
+    while not stop_websocket:
+        # always waiting for messages
+        # await asyncio.sleep(1/60)
+        msg = ws.recv()
+        if len(msg) == 0: break
+
+        current = time.perf_counter()
+        if current - previous < end - start:
+            # log.info(f"Skipped...")
+            continue
+
+        msg = json.loads(msg)
+        if "timestamp" in msg:
+            start = time.perf_counter()
+            left = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "left"]
+            right = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "right"]
+
+            # ! transforming millimeters to meters
+            # ! only updating the first hands
+            if len(left) > 0 and update_hand_obj:
+                i = left[0]
+                hand_pool[0].store_pos(msg, i)
+            else:
+                hand_pool[0].clean()
+
+            if len(right) > 0 and update_hand_obj:
+                i = right[0]
+                hand_pool[1].store_pos(msg, i)
+            else:
+                hand_pool[1].clean()
+
+            end = time.perf_counter()
+            # log.info(f"Getting {len(msg['hands'])} hands")
+
+            # log.info(f"Takes {end-start} to complete the extraction task")
+
+        else:
+            log.info(f"Getting message: {msg}")
+
+        previous = time.perf_counter()
+
+    log.info(f"Leap motion sampler is stopped")
+
     log.info(f"Sampler runner thread exited")
+
+
+def read():
+    curr_id = threading.get_native_id()
+    main_id = threading.main_thread().native_id
+    if curr_id == main_id:
+        log.error(f"This functions should only be called from another thread.")
+        return
+
+    # log.warning(f"Setting read timeout to None (indefinitely) and looping...")
+    # beacon.ser.timeout = None
+    start = time.perf_counter()
+    while not stop_beacon:
+        end = time.perf_counter()
+        time.sleep(max(0, 1/8 - end + start))
+        start = time.perf_counter()
+        s = beacon.ser.readline()
+        log.info(f"[Beacon] Echo: {s.decode()}")
 
 
 def main():
@@ -207,13 +218,26 @@ def main():
 
     parser_thread = Thread(target=parse)
     parser_thread.start()
+
+    beacon_thread = Thread(target=read)
+    beacon_thread.start()
+
     render(interactive=True)
+
+
+def kill():
+    global stop_websocket, stop_parser, stop_beacon
+    stop_websocket = stop_parser = stop_beacon = True
+    beacon.close()
+    ws.close()
+    # sampler.create_task(websocket.close())
 
 
 # ! the signaler of the two threads, updated by renderer, used by sampler
 stop_websocket = False
 stop_parser = False
 stop_beacon = False
+
 update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
 hand_pool = [Hand() for i in range(2)]
