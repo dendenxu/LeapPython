@@ -72,16 +72,20 @@ class GestureParser:
         # M = np.linalg.inv(M) # Transfrom from Out space to Arduino space
 
         M = np.array([
-            [-0.57735027, -1.],
+            [0.57735027, 1.],
             [-0.57735027,  1.]
         ])
 
-        coords = M.dot(force)  # transformed into voltage space
+        coords = M.dot(force)[::-1]  # transformed into voltage space
 
         # log.info(f"Transformed force in arduino space: {coords}")
 
+        voltage = np.array([[c > 0, np.abs(c)] for c in coords]).ravel()
+
+        multiplier = [255, 255, 255, 255]
+
         msg = {
-            "voltages": np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
+            "voltage": (voltage*multiplier).tolist(),
         }
 
         return json.dumps(msg)+"\n"

@@ -15,11 +15,20 @@ class Beacon:
         log.info(f"Serial on {port}, baudrate {baudrate}, open: {self.ser.is_open}")
         log.info(f"Serial status: {str(self.ser)}")
 
+        self.last_msg = None
+
     def send(self, signal):
-        self.ser.write(signal.encode())
+        if self.last_msg is None or signal != self.last_msg:
+            log.info(f"To serial: {signal.encode()}")
+            self.ser.write(signal.encode())
+            self.last_msg = signal
 
     def read(self):
         return self.ser.readline()
 
     def close(self):
         self.ser.close()
+
+    @property
+    def out_waiting(self):
+        return self.ser.out_waiting
