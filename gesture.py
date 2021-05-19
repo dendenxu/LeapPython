@@ -16,8 +16,8 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base_left = np.array([-1, 0, 0])  # left palm base position
-        self.base_right = np.array([1, 0, 0])  # rhgt palm base position
+        self.base_left = np.array([-0.6, 0, 0])  # left palm base position
+        self.base_right = np.array([0.6, 0, 0])  # rhgt palm base position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
         self.direction = direction
@@ -111,7 +111,12 @@ class GestureParser:
 
             # log.info(f"Transformed force in arduino space: {coords}")
 
-            msg["voltages"] = np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
+            voltage = np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
+            multiplier = np.array([255, 512, 255, 512])
+
+            values = voltage * multiplier
+            values = np.clip(values, 0, 255)
+            msg["voltage"] = values.tolist()
 
         else:
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
@@ -131,4 +136,4 @@ class GestureParser:
             
             # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
             
-        return json.dumps(msg)+"\n"
+        return msg
