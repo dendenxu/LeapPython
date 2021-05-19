@@ -68,6 +68,10 @@ class Hand:
     @property
     def wrist(self):
         return self.arm[1]
+    
+    @property
+    def elbow(self):
+        return self.arm[0]
 
     @property
     def arm(self):
