@@ -16,7 +16,8 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base = np.array([0, 0, 0])  # palm position
+        self.base_left = np.array([-1, 0, 0])  # left palm base position
+        self.base_right = np.array([1, 0, 0])  # rhgt palm base position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
         self.direction = direction
@@ -25,7 +26,7 @@ class GestureParser:
         tip = getattr(self.hand, finger)[-1]
         vec = tip - fist
         dist = np.sqrt(np.dot(vec, vec))
-        return dist < self.fist_threshold / 3
+        return dist < self.fist_threshold / 2
     
     def is_hold(self):
         palm = self.hand.palm.copy()
@@ -51,11 +52,11 @@ class GestureParser:
     def parse(self):
         palm = self.hand.palm.copy()
         wrist = self.hand.wrist.copy()
-        elbow = self.hand.elbow.copy()
+        # elbow = self.hand.elbow.copy()
         palm_normal = self.hand.palm_normal.copy()
         fist = palm + 0.05 * normal(palm-wrist) + 0.35 * palm_normal
 
-        arm_direction = wrist - elbow 
+        # arm_direction = wrist - elbow 
         #[angle_hor, angle_ver] = self.get_angle(arm_direction)
         palm_normal = self.hand.palm_normal.copy()
         
@@ -64,6 +65,7 @@ class GestureParser:
         for finger in self.hand.finger_names:
             is_wrap.append(self.is_wrap(fist, finger))
 
+        msg = {}
         if self.direction == 1 :
             if holding:
                 self.palm_open_count = self.palm_open_count_max
@@ -76,7 +78,7 @@ class GestureParser:
             cube_scale = self.cube_scale
 
             if apply_force:
-                force = (palm - self.base)[[0, 2]]
+                force = (palm - self.base_right)[[0, 2]]
                 cube_scale *= 1.5
                 # log.info(f"Adding force: {force}")
             # else:
@@ -109,15 +111,24 @@ class GestureParser:
 
             # log.info(f"Transformed force in arduino space: {coords}")
 
-            msg = {
-                "voltages": np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
-            }
+            msg["voltages"] = np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
 
         else:
-            msg = {}
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
-                msg["angle1"] = "10"
+                msg["angle0"] = "10"
+                # 爪子闭合
             elif (not is_wrap[1]) and (not is_wrap[2]) and (not is_wrap[3]):
-                msg["angle1"] = "50"
+                msg["angle0"] = "50"
+                # 爪子打开
+            
+            if is_wrap[0] and not is_wrap[4]:
+                msg["angle3"] = "r"
+                # 向右转
+
+            if is_wrap[4] and not is_wrap[0]:
+                msg["angle3"] = "l"
+                # 向左转
+            
+            # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
             
         return json.dumps(msg)+"\n"
