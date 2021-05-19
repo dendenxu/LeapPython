@@ -13,9 +13,11 @@ from log import log
 import asyncio
 import websockets
 
-READ_INTERVAL = 1/60
-PARSE_INTERVAL = 1/5
+READ_INTERVAL = 0
+PARSE_INTERVAL = 1/20
 ENABLE_BEACON = True
+
+arduino_fps = 0
 
 
 def render(interactive=False):
@@ -39,6 +41,7 @@ def render(interactive=False):
         console.write(" Backend: %s (%s)" % (window._backend.__name__,
                                              window._backend.__version__))
         console.write(" Actual FPS: %.2f frames/second" % (window.fps))
+        console.write(" Arduino FPS: %.2f frames/second" % (arduino_fps))
         console.write(" Hit 'V' key to toggle bone view")
         console.write(" Hit 'P' key to pause or unpause")
         console.write("-------------------------------------------------------")
@@ -201,14 +204,15 @@ def parse():
         log.info(f"Getting parser result: {signal0}")
         log.info(f"Getting parser result: {signal1}")
 
-        signal = {**signal0, **signal1}
+        # signal = {**signal0, **signal1}
 
-        signal = json.dumps(signal) + "\n"
-        # print("0:")
-        # print(signal0)
-        # print("1:")
-        # print(signal1)
-        beacon.send(signal)
+        # signal = json.dumps(signal) + "\n"
+
+        # signal = "".join([ f"{v:03.0f}" for v in signal1["voltage"]])
+
+        log.info(f"[Beacon] Send: {signal1}")
+
+        beacon.send_raw(signal1)
 
     log.info(f"Parser thread opened")
     start = time.perf_counter()
@@ -240,9 +244,14 @@ def read():
         global device_ready
         try:
             msg = beacon.readline()
-            if msg.strip() == "DEVICE_READY_MESSAGE":
+            if msg.strip() == "OK":
                 device_ready = True
-                # log.info(f"[Beacon] Echo: {msg}")
+                log.info(f"[Beacon] Echo: {msg}")
+
+            elif msg.startswith("FPS:"):
+                global arduino_fps, PARSE_INTERVAL
+                arduino_fps = float(msg[len("FPS:"):])
+                PARSE_INTERVAL = 1 / arduino_fps
 
             else:
                 if len(msg):
