@@ -91,12 +91,12 @@ class GestureParser:
 
         values = voltage * multiplier
 
-        message = "".join([ f"{v:03.0f}" for v in values ])
+        # message = "".join([ f"{v:03.0f}" for v in values ])
 
-        return message + "\n"
+        # return message + "\n"
 
-        # msg = {
-        #     "voltage": (values).tolist(),
-        # }
+        msg = {
+            "voltage": (values).tolist(),
+        }
 
-        # return json.dumps(msg)+"\n"
+        return json.dumps(msg)+"\n"

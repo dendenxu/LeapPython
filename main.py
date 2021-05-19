@@ -15,7 +15,7 @@ import websockets
 
 READ_INTERVAL = 1/60
 PARSE_INTERVAL = 1/5
-ENABLE_BEACON = False
+ENABLE_BEACON = True
 
 
 def render(interactive=False):
