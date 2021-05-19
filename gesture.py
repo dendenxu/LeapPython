@@ -48,6 +48,7 @@ class GestureParser:
 
         if apply_force:
             force = (palm - self.base)[[0, 2]]
+            force[1] *= -1
             cube_scale *= 1.5
             # log.info(f"Adding force: {force}")
         # else:
@@ -71,21 +72,31 @@ class GestureParser:
 
         # M = np.linalg.inv(M) # Transfrom from Out space to Arduino space
 
+        # M = np.array([
+        #     [np.sqrt(2)/2, np.sqrt(2)/2],
+        #     [-np.sqrt(2)/2,np.sqrt(2)/2]
+        # ])
         M = np.array([
             [0.57735027, 1.],
             [-0.57735027,  1.]
         ])
 
-        coords = M.dot(force)[::-1]  # transformed into voltage space
+        coords = M.dot(force)  # transformed into voltage space
 
         # log.info(f"Transformed force in arduino space: {coords}")
 
-        voltage = np.array([[c > 0, np.abs(c)] for c in coords]).ravel()
+        voltage = np.array([[c < 0, np.abs(c)] for c in coords]).ravel()
 
         multiplier = [255, 255, 255, 255]
 
-        msg = {
-            "voltage": (voltage*multiplier).tolist(),
-        }
+        values = voltage * multiplier
 
-        return json.dumps(msg)+"\n"
+        message = "".join([ f"{v:03.0f}" for v in values ])
+
+        return message + "\n"
+
+        # msg = {
+        #     "voltage": (values).tolist(),
+        # }
+
+        # return json.dumps(msg)+"\n"

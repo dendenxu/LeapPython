@@ -15,6 +15,8 @@ import websockets
 
 READ_INTERVAL = 1/60
 PARSE_INTERVAL = 1/5
+ENABLE_BEACON = False
+
 
 def render(interactive=False):
 
@@ -182,12 +184,14 @@ def sample():
     loop.run_until_complete(leap_sampler())
     log.info(f"Sampler runner thread exited")
 
+
 def parse():
     curr_id = threading.get_native_id()
     main_id = threading.main_thread().native_id
     if curr_id == main_id:
         log.error(f"This functions should only be called from another thread.")
         return
+
     def parse_and_send():
         # log.info(f"Parsing position data...")
         signal = parser.parse()
@@ -216,24 +220,21 @@ def read():
         return
 
     # log.warning(f"Setting read timeout to None (indefinitely) and looping...")
-    # beacon.ser.timeout = None
     start = time.perf_counter()
     while not stop_beacon:
         end = time.perf_counter()
         time.sleep(max(0, READ_INTERVAL - end + start))
         start = time.perf_counter()
-        s = beacon.ser.readline()
-        log.info(f"[Beacon] Echo: {s}")
         global device_ready
-        if not device_ready:
-            try:
-                msg = s.decode()
-                j = json.loads(msg)
-                if j['ready']:
-                    device_ready = True
-            except Exception as e:
-                # log.warning(f"{e}")
-                pass
+        try:
+            msg = beacon.readline()
+            if msg.strip() == "DEVICE_READY_MESSAGE":
+                device_ready = True
+            else:
+                if len(msg):
+                    log.info(f"[Beacon] Echo: {msg}")
+        except Exception as e:
+            log.error(e)
 
 
 def main():
@@ -268,8 +269,7 @@ update_hand_obj = True
 hand_pool = [Hand() for i in range(2)]
 
 parser = GestureParser(hand_pool[1])  # currently only responding to right hand gesture
-
-beacon = Beacon(port="COM5", baudrate=9600)
+beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON)
 
 if __name__ == "__main__":
     main()
