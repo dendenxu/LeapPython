@@ -13,8 +13,8 @@ from log import log
 import asyncio
 import websockets
 
-READ_INTERVAL = 1/60
-PARSE_INTERVAL = 1/5
+READ_INTERVAL = 0
+PARSE_INTERVAL = 1/20
 ENABLE_BEACON = True
 
 
@@ -242,7 +242,7 @@ def read():
             msg = beacon.readline()
             if msg.strip() == "DEVICE_READY_MESSAGE":
                 device_ready = True
-                # log.info(f"[Beacon] Echo: {msg}")
+                log.info(f"[Beacon] Echo: {msg}")
 
             else:
                 if len(msg):
