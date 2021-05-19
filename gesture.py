@@ -16,8 +16,8 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base_left = np.array([-1, 0, 0])  # left palm base position
-        self.base_right = np.array([1, 0, 0])  # rhgt palm base position
+        self.base_left = np.array([-0.6, 0, 0])  # left palm base position
+        self.base_right = np.array([0.6, 0, 0])  # rhgt palm base position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
         self.direction = direction
@@ -114,6 +114,7 @@ class GestureParser:
             msg["voltages"] = np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
 
         else:
+            print(palm)
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
                 msg["angle0"] = "10"
                 # 爪子闭合
@@ -129,6 +130,14 @@ class GestureParser:
                 msg["angle3"] = "l"
                 # 向左转
             
+            # 在z上的移动大概是[2.7, 4.6]
+            # 在y上的移动大概是[0, -1.5]
+            # 
+            # 上臂舵机[10, 140]
+            # 下臂舵机[40, 170]
+            # 
+            # 
+            # 映射到两个机械臂舵机上就行
             # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
             
         return json.dumps(msg)+"\n"
