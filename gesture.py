@@ -122,11 +122,11 @@ class GestureParser:
 
             values = voltage * multiplier
             values = np.clip(values, 0, 255).astype("uint8")
-            msg["voltage"] = values.tolist()
+            # msg["voltage"] = values.tolist()
 
             # ! being hacky
 
-            return values.tobytes()
+            # return values.tobytes()
 
         else:
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
@@ -137,11 +137,11 @@ class GestureParser:
                 # 爪子打开
             
             if is_wrap[0] and not is_wrap[4]:
-                msg["angle0"] = "r"
+                msg["angle0"] = "1"
                 # 向右转
 
             if is_wrap[4] and not is_wrap[0]:
-                msg["angle0"] = "l"
+                msg["angle0"] = "0"
                 # 向左转
             
             # 在y上的移动大概是[1.3, 2.6]
@@ -163,10 +163,13 @@ class GestureParser:
             print(dis_pos)
             print(msg["angle2"])
             print(msg["angle1"])
+
+            msggg = [msg["angle1"], msg["angle2"]]
+            msggg = np.array(msggg).astype("uint8")
             
-            
+            # return msggg.tobytes()
             # 
             # 映射到两个机械臂舵机上就行
             # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
             
-        return msg
+        return np.concatenate([values, msggg], 0).tobytes()
