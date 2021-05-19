@@ -111,7 +111,12 @@ class GestureParser:
 
             # log.info(f"Transformed force in arduino space: {coords}")
 
-            msg["voltages"] = np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
+            voltage = np.array([[c > 0, np.abs(c)] for c in coords]).ravel().tolist()
+            multiplier = np.array([255, 512, 255, 512])
+
+            values = voltage * multiplier
+            values = np.clip(values, 0, 255)
+            msg["voltage"] = values.tolist()
 
         else:
             print(palm)
@@ -140,4 +145,4 @@ class GestureParser:
             # 映射到两个机械臂舵机上就行
             # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
             
-        return json.dumps(msg)+"\n"
+        return msg

@@ -15,7 +15,7 @@ import websockets
 
 READ_INTERVAL = 1/60
 PARSE_INTERVAL = 1/5
-ENABLE_BEACON = False
+ENABLE_BEACON = True
 
 
 def render(interactive=False):
@@ -193,16 +193,22 @@ def parse():
         return
 
     def parse_and_send():
-        print("AAA")
+        # print("AAA")
         # log.info(f"Parsing position data...")
         signal0 = parser[0].parse()
         signal1 = parser[1].parse()
-        # log.info(f"Getting parser result: {signal}")
-        print("0:")
-        print(signal0)
-        print("1:")
-        print(signal1)
-        # beacon.send(signal)
+
+        log.info(f"Getting parser result: {signal0}")
+        log.info(f"Getting parser result: {signal1}")
+
+        signal = {**signal0, **signal1}
+
+        signal = json.dumps(signal) + "\n"
+        # print("0:")
+        # print(signal0)
+        # print("1:")
+        # print(signal1)
+        beacon.send(signal)
 
     log.info(f"Parser thread opened")
     start = time.perf_counter()
@@ -236,6 +242,8 @@ def read():
             msg = beacon.readline()
             if msg.strip() == "DEVICE_READY_MESSAGE":
                 device_ready = True
+                # log.info(f"[Beacon] Echo: {msg}")
+
             else:
                 if len(msg):
                     log.info(f"[Beacon] Echo: {msg}")
@@ -278,7 +286,7 @@ parser = []
 parser.append(GestureParser(hand_pool[0], 0))  # 0 for left hand gesture
 parser.append(GestureParser(hand_pool[1], 1))  # 1 for right
 
-beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON) 
+beacon = Beacon(port="COM9", baudrate=9600, enable=ENABLE_BEACON) 
 
 if __name__ == "__main__":
     main()
