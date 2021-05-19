@@ -20,6 +20,8 @@ class Beacon:
         self.last_msg = None
         self.last_msg_raw = None
 
+        self.dummy_msg = "OK"
+
     def send(self, signal):
         if not self.enable:
             # log.error(f"Beacon is disabled")
@@ -47,9 +49,11 @@ class Beacon:
             return ""
 
     def readline(self):
+        
         if not self.enable:
+            self.dummy_msg = "OK" if self.dummy_msg == "FPS:240" else "FPS:240"
             # log.error(f"Beacon is disabled")
-            return "DEVICE_READY_MESSAGE"
+            return self.dummy_msg
         return self.ser.readline().decode()
 
     def close(self):

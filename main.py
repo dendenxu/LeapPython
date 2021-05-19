@@ -13,6 +13,8 @@ from log import log
 import asyncio
 import websockets
 
+import numpy as np
+
 READ_INTERVAL = 0
 PARSE_INTERVAL = 1/20
 ENABLE_BEACON = True
@@ -210,9 +212,15 @@ def parse():
 
         # signal = "".join([ f"{v:03.0f}" for v in signal1["voltage"]])
 
-        log.info(f"[Beacon] Send: {signal1}")
+        signal = signal1 + signal0
 
-        beacon.send_raw(signal1)
+        log.info(f"[Beacon] Send: {signal}")
+
+        decoded = np.frombuffer(signal, dtype="uint8")
+        decoded = "".join([f"{v:03.0f}" for v in decoded])
+        print(decoded, file=log_file)
+
+        beacon.send_raw(signal)
 
     log.info(f"Parser thread opened")
     start = time.perf_counter()
@@ -244,18 +252,16 @@ def read():
         global device_ready
         try:
             msg = beacon.readline()
+            if ENABLE_BEACON:
+                log.info(f"[Beacon] Echo: {msg}")
             if msg.strip() == "OK":
                 device_ready = True
-                log.info(f"[Beacon] Echo: {msg}")
 
             elif msg.startswith("FPS:"):
                 global arduino_fps, PARSE_INTERVAL
                 arduino_fps = float(msg[len("FPS:"):])
                 PARSE_INTERVAL = 1 / arduino_fps
 
-            else:
-                if len(msg):
-                    log.info(f"[Beacon] Echo: {msg}")
         except Exception as e:
             log.error(e)
 
@@ -295,7 +301,9 @@ parser = []
 parser.append(GestureParser(hand_pool[0], 0))  # 0 for left hand gesture
 parser.append(GestureParser(hand_pool[1], 1))  # 1 for right
 
-beacon = Beacon(port="COM9", baudrate=9600, enable=ENABLE_BEACON) 
+beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON) 
+
+log_file = open("output(decoded).txt", "w")
 
 if __name__ == "__main__":
     main()

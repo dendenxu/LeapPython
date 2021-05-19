@@ -16,8 +16,8 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base_left = np.array([-0.6, 0.6, 0])  # left palm base position
-        self.base_right = np.array([0.6, 0, 0])  # rhgt palm base position
+        self.base_left = np.array([-0.8, 0.6, .6])  # left palm base position
+        self.base_right = np.array([0.8, 0, 0])  # rhgt palm base position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
         self.direction = direction
@@ -126,9 +126,10 @@ class GestureParser:
 
             # ! being hacky
 
-            # return values.tobytes()
+            return values.tobytes()
 
         else:
+            msg["angle3"] = "10"
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
                 msg["angle3"] = "10"
                 # 爪子闭合
@@ -155,21 +156,21 @@ class GestureParser:
             dis_pos = (palm - self.base_left)[[1, 2]]
 
             print(dis_pos)
-            dis_pos[1] = max(-1.5, min(0, dis_pos[1]))
+            dis_pos[1] = max(-1.5, min(0.6, dis_pos[1]))
             dis_pos[0] = max(0.6, min(3.3, dis_pos[0]))
-            msg["angle2"] = 10 + round((140 - 10) * (dis_pos[0] / (3.3 - 0.6)))
-            msg["angle1"] = 40 + round((170 - 40) * (dis_pos[1] / (-1.5)))
+            msg["angle2"] = 10 + round((100 - 10) * (dis_pos[0] / (3.3 - 0.6)))
+            msg["angle1"] = 40 + round((120 - 40) * (dis_pos[1] / (-1.5)))
 
             print(dis_pos)
             print(msg["angle2"])
             print(msg["angle1"])
 
-            msggg = [msg["angle1"], msg["angle2"]]
+            msggg = [msg["angle1"], msg["angle2"], msg["angle3"]]
             msggg = np.array(msggg).astype("uint8")
             
-            # return msggg.tobytes()
+            return msggg.tobytes()
             # 
             # 映射到两个机械臂舵机上就行
             # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
             
-        return np.concatenate([values, msggg], 0).tobytes()
+        # return np.concatenate([values, msggg], 0).tobytes()
