@@ -18,6 +18,7 @@ class Beacon:
         log.info(f"Serial status: {str(self.ser)}")
 
         self.last_msg = None
+        self.last_msg_raw = None
 
     def send(self, signal):
         if not self.enable:
@@ -28,6 +29,19 @@ class Beacon:
             self.ser.write(signal.encode())
             self.last_msg = signal
             return signal
+        else:
+            log.info(f"Duplicated message")
+            return ""
+
+    def send_raw(self, raw):
+        if not self.enable:
+            # log.error(f"Beacon is disabled")
+            return
+        if self.last_msg_raw is None or raw != self.last_msg_raw:
+            # log.info(f"To serial: {signal.encode()}")
+            self.ser.write(raw)
+            self.last_msg_raw = raw
+            return raw
         else:
             log.info(f"Duplicated message")
             return ""
