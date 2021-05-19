@@ -63,14 +63,14 @@ def render(interactive=False):
     def on_draw(dt):
         window.clear()
         console.draw()
-        parser.debug_cube.draw()
+        parser[1].debug_cube.draw()
 
         for hand in hand_pool:
             hand.draw()
 
     @window.event
     def on_resize(width, height):
-        parser.debug_cube.resize(width, height)
+        parser[1].debug_cube.resize(width, height)
         for hand in hand_pool:
             hand.resize(width, height)
 
@@ -193,10 +193,16 @@ def parse():
         return
 
     def parse_and_send():
+        print("AAA")
         # log.info(f"Parsing position data...")
-        signal = parser.parse()
+        signal0 = parser[0].parse()
+        signal1 = parser[1].parse()
         # log.info(f"Getting parser result: {signal}")
-        beacon.send(signal)
+        print("0:")
+        print(signal0)
+        print("1:")
+        print(signal1)
+        # beacon.send(signal)
 
     log.info(f"Parser thread opened")
     start = time.perf_counter()
@@ -268,8 +274,11 @@ update_hand_obj = True
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
 hand_pool = [Hand() for i in range(2)]
 
-parser = GestureParser(hand_pool[1])  # currently only responding to right hand gesture
-beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON)
+parser = []
+parser.append(GestureParser(hand_pool[0], 0))  # 0 for left hand gesture
+parser.append(GestureParser(hand_pool[1], 1))  # 1 for right
+
+beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON) 
 
 if __name__ == "__main__":
     main()
