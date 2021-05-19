@@ -16,7 +16,7 @@ class GestureParser:
         self.palm_open_count_max = 1
         self.palm_open_count = 0
         self.hand = hand  # store a reference to the hand
-        self.base_left = np.array([-0.6, 0, 0])  # left palm base position
+        self.base_left = np.array([-0.6, 0.6, 0])  # left palm base position
         self.base_right = np.array([0.6, 0, 0])  # rhgt palm base position
         self.debug_cube = HollowCube(glm.translation(0, -2, -10), np.eye(4, dtype=np.float32))
         self.cube_scale = 2
@@ -119,28 +119,42 @@ class GestureParser:
             msg["voltage"] = values.tolist()
 
         else:
-            print(palm)
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
-                msg["angle0"] = "10"
+                msg["angle3"] = "10"
                 # 爪子闭合
             elif (not is_wrap[1]) and (not is_wrap[2]) and (not is_wrap[3]):
-                msg["angle0"] = "50"
+                msg["angle3"] = "50"
                 # 爪子打开
             
             if is_wrap[0] and not is_wrap[4]:
-                msg["angle3"] = "r"
+                msg["angle0"] = "r"
                 # 向右转
 
             if is_wrap[4] and not is_wrap[0]:
-                msg["angle3"] = "l"
+                msg["angle0"] = "l"
                 # 向左转
             
-            # 在z上的移动大概是[2.7, 4.6]
-            # 在y上的移动大概是[0, -1.5]
+            # 在y上的移动大概是[1.3, 2.6]
+            # 在z上的移动大概是[0, -1.5]
             # 
-            # 上臂舵机[10, 140]
-            # 下臂舵机[40, 170]
-            # 
+            # 上臂舵机[10, 140], up <-> +
+            # 下臂舵机[40, 170], up <-> -
+            # y -> 上臂
+            # z -> 下臂
+
+            dis_pos = (palm - self.base_left)[[1, 2]]
+
+            print(dis_pos)
+            dis_pos[1] = max(-1.5, min(0, dis_pos[1]))
+            dis_pos[0] = max(0.6, min(3.3, dis_pos[0]))
+            msg["angle2"] = 10 + round((140 - 10) * (dis_pos[0] / (3.3 - 0.6)))
+            msg["angle1"] = 40 + round((170 - 40) * (dis_pos[1] / (-1.5)))
+
+            print(dis_pos)
+            print(msg["angle2"])
+            print(msg["angle1"])
+            
+            
             # 
             # 映射到两个机械臂舵机上就行
             # 这里是计算手腕位置与base_position的差，来控制中间两个舵机角度的代码
