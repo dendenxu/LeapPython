@@ -129,20 +129,22 @@ class GestureParser:
             return values.tobytes()
 
         else:
-            msg["angle3"] = "10"
+            # 默认状态下 爪子稍微张开，bottom舵机发送信号为0，表示不动
+            msg["angle0"] = "0"
+            msg["angle3"] = "20"
             if is_wrap[1] and is_wrap[2] and is_wrap[3]:                    
                 msg["angle3"] = "10"
                 # 爪子闭合
             elif (not is_wrap[1]) and (not is_wrap[2]) and (not is_wrap[3]):
-                msg["angle3"] = "50"
+                msg["angle3"] = "70"
                 # 爪子打开
             
             if is_wrap[0] and not is_wrap[4]:
-                msg["angle0"] = "1"
+                msg["angle0"] = "63"
                 # 向右转
 
             if is_wrap[4] and not is_wrap[0]:
-                msg["angle0"] = "0"
+                msg["angle0"] = "127"
                 # 向左转
             
             # 在y上的移动大概是[1.3, 2.6]
@@ -165,7 +167,12 @@ class GestureParser:
             print(msg["angle2"])
             print(msg["angle1"])
 
-            msggg = [msg["angle1"], msg["angle2"], msg["angle3"]]
+            msggg = [msg["angle0"], msg["angle1"], msg["angle2"], msg["angle3"]]
+            # 底部舵机是否左右转
+            # 下臂舵机角度
+            # 上臂舵机角度
+            # 爪子舵机角度
+
             msggg = np.array(msggg).astype("uint8")
             
             return msggg.tobytes()
