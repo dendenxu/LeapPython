@@ -49,18 +49,33 @@ log_file = open("output(decoded).txt", "w")  # used to log and debug outgoing de
 
 
 def render(interactive=False):
+    """
+    The main thread rendering funciton for this application
+    This takes care of the rendering, handling of window event
+      - Console (information) update
+      - Redrawing of the cubes representing the finger joints location
+      - Resizing funcitons for all cubes (including debugging cube)
+      - Handling of low-level OpenGL initialization / rendering
+      - Key board event for some interesting interaction
+      - Opening up the interactive python interpreter to give
+        advanced user full control over the driver
+
+    :param interactive: Whether the program should give user an 
+    interactive python interpreter after the OpenGL window is loaded up
+    """
 
     log.info(f"Runnning glfw renderer")
 
-    app.use("glfw")
+    app.use("glfw")  # setting OpenGL backend, you'll need glfw installed
     config = app.configuration.Configuration()
-    config.samples = 16
-    console = app.Console(rows=32, cols=80, scale=3, color=(0.1, 0.1, 0.1, 1))
-    global window  # to be used to close the window
+    config.samples = 16  # super sampling anti-aliasing
+    console = app.Console(rows=32, cols=80, scale=3, color=(0.1, 0.1, 0.1, 1))  # easy to use info displayer
+    global window  # to be used to close the window, declared as global var for interpreter to reference
     window = app.Window(width=console.cols*console.cwidth*console.scale, height=console.rows*console.cheight*console.scale, color=(1, 1, 1, 1), config=config)
 
     @window.timer(1/30.0)
     def timer(dt):
+        # used every 1/30 second to update frame rate and stuff...
         console.clear()
         console.write("-------------------------------------------------------")
         console.write(" Glumpy version %s" % (__version__))
@@ -79,6 +94,8 @@ def render(interactive=False):
 
     @window.timer(1/30.0)
     def rotate(dt):
+        # used every 1/30 to update the model matrix of all cubes, to check whether the program is frozen
+
         # Rotate cube
         for hand in hand_pool:
             model = hand.key_point.model
@@ -92,6 +109,7 @@ def render(interactive=False):
 
     @window.event
     def on_draw(dt):
+        # on every window refresh, redraw the OpenGL program on the screen
         window.clear()
         console.draw()
         parser[1].debug_cube.draw()
@@ -101,23 +119,30 @@ def render(interactive=False):
 
     @window.event
     def on_resize(width, height):
+        # when the user resizes the window, update the OpenGL program
         parser[1].debug_cube.resize(width, height)
         for hand in hand_pool:
             hand.resize(width, height)
 
     @window.event
     def on_init():
-        gl.glEnable(gl.GL_DEPTH_TEST)
-        gl.glEnable(gl.GL_LINE_SMOOTH)
-        gl.glPolygonOffset(1, 1)
+        # init the OpenGL parameters
+        gl.glEnable(gl.GL_DEPTH_TEST)  # enable depth buffer
+        gl.glEnable(gl.GL_LINE_SMOOTH)  # enable line antialiasing
+        gl.glPolygonOffset(1, 1)  # resize line polygon
 
     @window.event
     def on_close():
+        # when the user press `ESC` or closed the window
+        # kill all other threads
         kill()
         log.info("The user closed the renderer window")
 
     @window.event
     def on_character(text):
+        # process keyboard information
+        # like changing the display style
+        # or changing pause the update of Hand object
         global update_hand_obj
         'A character has been typed'
         if text == "v":
@@ -126,20 +151,7 @@ def render(interactive=False):
                 hand.show_type %= 3
         elif text == 'p':
             update_hand_obj = not update_hand_obj
-        # TODO: Update keyboard mapping here for testing
-        # elif text == "w":
-        #     beacon.send("F")
-        # elif text == "s":
-        #     beacon.send("B")
-        # elif text == "a":
-        #     beacon.send("L")
-        # elif text == "d":
-        #     beacon.send("R")
-        # elif text == " ":
-        #     beacon.send("S")
-        # else:
-        #     beacon.send(text)
-        # log.info(f"Key: {text}")
+        # TODO: Update keyboard mapping here for WSAD
 
     window.attach(console)
     if interactive:
@@ -151,37 +163,64 @@ def render(interactive=False):
     log.info(f"The render function returned")
 
 
-def sample():
+def thread_check():
+    """
+    Check whether this thread is the main thread
+    Note: we don't want the thread to be main so we return True if it's not
+    Return False if the check doesn't pass
 
+    """
+    curr_id = threading.get_native_id()
+    main_id = threading.main_thread().native_id
+    if curr_id == main_id:
+        log.error(f"This functions should only be called from another thread.")
+        return False
+    else:
+        return True
+
+
+def sample():
+    if not thread_check():
+        return
+    """
+    The sampler thread is responsible for interacting with the WebSocket interface
+    Uses websockets and asyncio to simplify the communication process
+    """
     async def leap_sampler():
         global stop_websocket, update_hand_obj
-        uri = "ws://localhost:6437/v7.json"
+        uri = "ws://localhost:6437/v7.json"  # this URL should be updated along with the SDK version
 
         while not stop_websocket:
-            async with websockets.connect(uri) as ws:
-                await ws.send(json.dumps({"focused": True}))
-                await ws.send(json.dumps({"background": True}))
+            async with websockets.connect(uri) as ws:  # open the websocket connection, it's pretty hard to close manually...
+                await ws.send(json.dumps({"focused": True}))  # focus on the Leap Motion device
+                await ws.send(json.dumps({"background": True}))  # allow background running of the application
                 await ws.send(json.dumps({"optimizeHMD": False}))
                 log.info(f"Focused on the leap motion controller...")
+
+                # initialize the performance counter
                 end = start = previous = time.perf_counter()
 
                 while not stop_websocket:
                     # always waiting for messages
-                    # await asyncio.sleep(1/60)
                     msg = await ws.recv()
                     current = time.perf_counter()
                     if current - previous < end - start:
-                        # log.info(f"Skipped...")
+                        # if the time used to update the current window is longer than
+                        # the currently accumulated time for reading the websocket, just wait until
+                        # the next websocket information and skip the frame update
+
+                        # this is for synchronizing the rendering thread and websocket thread better
                         continue
 
-                    msg = json.loads(msg)
-                    if "timestamp" in msg:
-                        start = time.perf_counter()
+                    msg = json.loads(msg)  # hand object information comes with JSON format
+                    if "timestamp" in msg:  # used to identity regular frame from some meta info update frame
+                        start = time.perf_counter()  # starting time of the frame update
+
+                        # the index of the left and right hand
                         left = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "left"]
                         right = [i for i in range(len(msg["hands"])) if msg["hands"][i]["type"] == "right"]
 
-                        # ! transforming millimeters to meters
-                        # ! only updating the first hands
+                        # update the hand if there's some left/right hand present in the current websocket package
                         if len(left) > 0 and update_hand_obj:
                             i = left[0]
                             hand_pool[0].store_pos(msg, i)
@@ -192,35 +231,31 @@ def sample():
                             i = right[0]
                             hand_pool[1].store_pos(msg, i)
                         else:
+                            # else just clean up the hand object location
                             hand_pool[1].clean()
 
-                        end = time.perf_counter()
-                        # log.info(f"Getting {len(msg['hands'])} hands")
-
-                        # log.info(f"Takes {end-start} to complete the extraction task")
-
-                        # else:
-
-                        # log.info(f"No hands hans been found")
+                        end = time.perf_counter()  # end time of the frame update
                     else:
-                        log.info(f"Getting message: {msg}")
+                        log.info(f"Getting message: {msg}")  # log the meta message for the user
 
-                    previous = time.perf_counter()
+                    previous = time.perf_counter()  # only update the previous time log if the full loop is run successfully
                 log.info("Reconnecting" if not stop_websocket else "Sampler terminated")
 
         log.info(f"Leap motion sampler is stopped")
 
     log.info(f"Running demo sampler from leap motion")
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(leap_sampler())
+    loop = asyncio.new_event_loop()  # new thread has no event loop by default
+    loop.run_until_complete(leap_sampler())  # run the Leap Motion Websocket sampler
     log.info(f"Sampler runner thread exited")
 
 
 def parse():
-    curr_id = threading.get_native_id()
-    main_id = threading.main_thread().native_id
-    if curr_id == main_id:
-        log.error(f"This functions should only be called from another thread.")
+    """
+    Using global hand_pool, parse the gesture to custom package
+    Then sent it through the beacon (Serial communication, bluetooth, etc)
+    Parsing interval (to avoid busy waiting) is updated to match the "frame rate" of the MCU
+    """
+    if not thread_check():
         return
 
     def parse_and_send():
@@ -255,6 +290,8 @@ def parse():
         end = time.perf_counter()
         time.sleep(max(0, parse_interval - end + start))
         start = time.perf_counter()
+
+        # the reader thread will update the device_ready flag
         if update_hand_obj and not stop_beacon and device_ready:
             parse_and_send()
             device_ready = False
@@ -263,10 +300,11 @@ def parse():
 
 
 def read():
-    curr_id = threading.get_native_id()
-    main_id = threading.main_thread().native_id
-    if curr_id == main_id:
-        log.error(f"This functions should only be called from another thread.")
+    """
+    Read messages sent by the MCU from the Serial beacon
+    Update arduino_fps, parse_interval and device_ready flag if needed
+    """
+    if not thread_check():
         return
 
     # log.warning(f"Setting read timeout to None (indefinitely) and looping...")
@@ -276,7 +314,7 @@ def read():
         time.sleep(max(0, READ_INTERVAL - end + start))
         start = time.perf_counter()
         global device_ready
-        try:
+        try: # sometimes the beacon send corrupted data, filter it by a try except block
             msg = beacon.readline()
             if ENABLE_BEACON:
                 log.info(f"[Beacon] Echo: {msg}")
@@ -294,19 +332,27 @@ def read():
 
 def main():
 
+    # spawn websocket communication thread
     sampler_thread = Thread(target=sample)
     sampler_thread.start()
 
+    # spawn hand gesture parser thread
     parser_thread = Thread(target=parse)
     parser_thread.start()
 
+    # spawn the incoming message processor thread
     beacon_thread = Thread(target=read)
     beacon_thread.start()
 
+    # run the renderer thread
     render(interactive=True)
+    # this will open an interactive python interpreter after the window is successfully loaded
+    # Note that you'll need to close the window before closing the interactive shell
+    # use Ctrl + D to close the shell after the window is dealt with
 
 
 def kill():
+    # kill other threads
     global stop_websocket, stop_parser, stop_beacon
     stop_websocket = stop_parser = stop_beacon = True
     beacon.close()
