@@ -1,7 +1,5 @@
-from hand import Hand
 from log import log
 import serial
-import threading
 
 
 class Beacon:
