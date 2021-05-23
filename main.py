@@ -1,25 +1,51 @@
-import json
-import websocket
-import time
-from threading import Thread, Lock
+# imports, don't change theses unless necessary
+import json  # for some object communification
+import time  # used for some timing and performance profiling
+
 import threading
+from threading import Thread, Lock  # Python-Mulitithreading. Though GIL (Global Interpreter Lock) exist, we can still utilize this for some multitasking and synchronization
 
-from glumpy import app, gl, glm, gloo, __version__
-from hand import Hand
-from beacon import Beacon
-from gesture import GestureParser
+from glumpy import app, gl, glm, gloo, __version__  # the easy to use python OpenGL framework
 
-from log import log
-import asyncio
-import websockets
+from hand import Hand  # Leap Motion Driver object: Hand, including arm
+from beacon import Beacon  # Serial Communication beacon, for all in one serial control
+from gesture import GestureParser  # Hand/Arm gesture parser, implements gestures to voltage/angle transformation
 
-import numpy as np
+import asyncio  # used only for the websocket implementation
+import websockets  # websocket interface
+# Note: we've also tried the websocket-client (import websocket), but it performs so poorly that it's nearly unusable
 
-READ_INTERVAL = 0
-PARSE_INTERVAL = 1/20
+from log import log  # for some timestamped logging
+import numpy as np  # used here only to log the beacon
+
+
+# Init Control, whether to simulate an Arduino device or not
 ENABLE_BEACON = True
 
-arduino_fps = 0
+
+# Some multithreading intervals, should be careful not to busy wait too much considering GIL
+READ_INTERVAL = 0  # global constant: extra time to wait after one reading loop
+
+
+# Global Threading States, updated dynamically
+# * main thread: renderer thread
+stop_websocket = False  # used only once, to stop the websocket thread
+stop_parser = False  # used only once, to stop the parser thread
+stop_beacon = False  # used only once, to stop the reader thread
+update_hand_obj = True  # can be used repeatedly, to pause or resume receiving WebSocket information from the Leap Motion Controller
+
+
+# Device Control, updated dynamically
+device_ready = False  # whether the MCU said he's ready after we've sent a command
+arduino_fps = 0  # the loop time received from the MCU, updated upon receiving
+parse_interval = 1/20  # extra time to wait after one parsing operation, updated with 1/parse_interval
+
+
+# * the actual hand pool, stores global hand object, updated by sampler, used by renderer
+hand_pool = [Hand() for _ in range(2)]  # the actual hand object
+parser = [GestureParser(hand_pool[i], i) for i in range(2)]  # the gesture parsers
+beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON)  # the serial controller
+log_file = open("output(decoded).txt", "w")  # used to log and debug outgoing device commands
 
 
 def render(interactive=False):
@@ -29,9 +55,9 @@ def render(interactive=False):
     app.use("glfw")
     config = app.configuration.Configuration()
     config.samples = 16
-    console = app.Console(rows=32, cols=80, scale=3, color=(1, 1, 1, 1))
+    console = app.Console(rows=32, cols=80, scale=3, color=(0.1, 0.1, 0.1, 1))
     global window  # to be used to close the window
-    window = app.Window(width=console.cols*console.cwidth*console.scale, height=console.rows*console.cheight*console.scale, color=(0.3, 0.3, 0.3, 1), config=config)
+    window = app.Window(width=console.cols*console.cwidth*console.scale, height=console.rows*console.cheight*console.scale, color=(1, 1, 1, 1), config=config)
 
     @window.timer(1/30.0)
     def timer(dt):
@@ -227,7 +253,7 @@ def parse():
     global device_ready
     while not stop_parser:
         end = time.perf_counter()
-        time.sleep(max(0, PARSE_INTERVAL - end + start))
+        time.sleep(max(0, parse_interval - end + start))
         start = time.perf_counter()
         if update_hand_obj and not stop_beacon and device_ready:
             parse_and_send()
@@ -258,9 +284,9 @@ def read():
                 device_ready = True
 
             elif msg.startswith("FPS:"):
-                global arduino_fps, PARSE_INTERVAL
+                global arduino_fps, parse_interval
                 arduino_fps = float(msg[len("FPS:"):])
-                PARSE_INTERVAL = 1 / arduino_fps
+                parse_interval = 1 / arduino_fps
 
         except Exception as e:
             log.error(e)
@@ -286,24 +312,6 @@ def kill():
     beacon.close()
     # sampler.create_task(websocket.close())
 
-
-# ! the signaler of the two threads, updated by renderer, used by sampler
-stop_websocket = False
-stop_parser = False
-stop_beacon = False
-device_ready = False
-
-update_hand_obj = True
-# * the actual hand pool, stores global hand object, updated by sampler, used by renderer
-hand_pool = [Hand() for i in range(2)]
-
-parser = []
-parser.append(GestureParser(hand_pool[0], 0))  # 0 for left hand gesture
-parser.append(GestureParser(hand_pool[1], 1))  # 1 for right
-
-beacon = Beacon(port="COM8", baudrate=9600, enable=ENABLE_BEACON) 
-
-log_file = open("output(decoded).txt", "w")
 
 if __name__ == "__main__":
     main()

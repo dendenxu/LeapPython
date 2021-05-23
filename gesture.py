@@ -4,7 +4,7 @@ from log import log
 from hand import Hand
 from cube import HollowCube
 from glumpy import app, gl, glm, gloo, __version__
-from helper import rotate_to_direction, rotate_to_2directions, normal
+from helper import rotate_to_direction, rotate_to_2directions, normalized
 import json
 
 
@@ -33,7 +33,7 @@ class GestureParser:
         wrist = self.hand.wrist.copy()
         palm_normal = self.hand.palm_normal.copy()
 
-        fist = palm + 0.05 * normal(palm-wrist) + 0.35 * palm_normal
+        fist = palm + 0.05 * normalized(palm-wrist) + 0.35 * palm_normal
         dist = 0
         for finger in self.hand.finger_names:
             tip = getattr(self.hand, finger)[-1]
@@ -54,7 +54,7 @@ class GestureParser:
         wrist = self.hand.wrist.copy()
         # elbow = self.hand.elbow.copy()
         palm_normal = self.hand.palm_normal.copy()
-        fist = palm + 0.05 * normal(palm-wrist) + 0.35 * palm_normal
+        fist = palm + 0.05 * normalized(palm-wrist) + 0.35 * palm_normal
 
         # arm_direction = wrist - elbow 
         #[angle_hor, angle_ver] = self.get_angle(arm_direction)

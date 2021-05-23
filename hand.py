@@ -1,19 +1,22 @@
+# Actual Core of the Leap Motion Python Driver (based on WebSocket)
+# It contains compact information about the hand recognized from the Leap Motion Controller
+# And it also manages the "HollowCube"s to be rendered on the screen for some debugging
+# Note that you can print information about a specific hand by just printing the str of it, like `str(hand)` or just print(hand)
+
 from glumpy import app, gl, glm, gloo, __version__
 from cube import HollowCube
 import numpy as np
 import json
 import time
-from log import log
-from helper import rotate_to_direction
+from helper import rotate_to_direction  # helper function to construct transformation
 
 
 class Hand:
     def __init__(self):
-        # directions
-        self.palm_normal = np.zeros(3, np.float32)
-        self.timestamp = 256101634501
 
+        # ! Actual init definitions, want more bones? Add them here
         # the names of the fingers, with order
+        # Note: for both fingers and arms, the joints all starts from your heart and goes to your tips, for example, with arm, the first element is the cloest to your heart, which is the elbow, then wrist, then plam
         self.finger_names = ["thumb", "index", "middle", "ring", "pinky"]
         self.arm_names = ["arm"]
         # all components of a hand, including arm, fingers
@@ -23,23 +26,13 @@ class Hand:
         # Leap Motion subscription of finger keypoints
         # metacarpal, proximal, middle, distal
         self.finger_pos_names = ["carpPosition", "mcpPosition", "pipPosition", "dipPosition", "btipPosition"]
-        self.name_to_pos_names = {**{name: self.arm_pos_names for name in self.arm_names}, **{name: self.finger_pos_names for name in self.finger_names}}
 
+        # ! Derived information from the above definitions
+        self.name_to_pos_names = {**{name: self.arm_pos_names for name in self.arm_names}, **{name: self.finger_pos_names for name in self.finger_names}}
         # number of key points of the fingers
         self.finger_key_pt_count = len(self.finger_pos_names) * len(self.finger_names)
         # number of key points of the arm
         self.arm_key_pt_count = len(self.arm_pos_names)
-        # global view transformation
-        self.u_view = glm.translation(0, -2, -10)
-        # finger key point scale relative to arm
-        self.finger_scale = 0.5
-
-        # actual OpenGL object wrapper of all key points, reused
-        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
-        self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
-
-        self.show_type = 1
-
         # mapper from all finger names and "arm" to their index in the position list
         self.name_to_index = {}
         arm_name_count = len(self.arm_pos_names)
@@ -51,16 +44,40 @@ class Hand:
             self.name_to_index[name] = [index, index+finger_name_count]
             index += finger_name_count
 
+        # ! OpenGL controls
+        # global camera view transformation
+        self.u_view = glm.translation(0, -2, -10)
+        # global finger key point scale relative to arm
+        self.finger_scale = 0.5
+        # global bones scale relative to finger
+        self.finger_scale = 0.67
+        # show_type: 1: only joints, 2: joints + bones, 0: bones
+        self.show_type = 1
+
+        # OpenGL objects
+        # actual OpenGL object wrapper of all key points, reused
+        self.key_point = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
+        self.bone = HollowCube(self.u_view, np.eye(4, dtype=np.float32))
+
+        # ! Actual bare metal data
         # keypoint position list, queried every frame update for new keypoint position
         # websockt process should update this list instead of the raw OpenGL obj
         self.pos = np.array([np.zeros(3, np.float32) for _ in range(self.finger_key_pt_count+self.arm_key_pt_count)])
+        # Extra information to be remembered in the history
+        # The normal vector of the palm
+        self.palm_normal = np.zeros(3, np.float32)
+        # timestamp
+        self.timestamp = 256101634501  # currently not used in parsing
 
-        # empty gesture history
+        # ! History list
+        # empty gesture history, updated withe new infromation from the above mentioned data
         self.history = []
 
+
+    # ! Convenient properties to access the hand structure
     # TODO: find a way to optimize this implementation
     # getter and setter logic already extracted
-    # tried to use "inspect" package, too slow
+    # Note: tried to use "inspect" package, too slow
     @property
     def palm(self):
         return self.arm[2]
@@ -68,7 +85,7 @@ class Hand:
     @property
     def wrist(self):
         return self.arm[1]
-    
+
     @property
     def elbow(self):
         return self.arm[0]
@@ -165,15 +182,24 @@ class Hand:
         else:
             return glm.translate(glm.scale(np.eye(4, dtype=np.float32), self.finger_scale, self.finger_scale, self.finger_scale), *position)
 
-    def get_bone_transform(self, start, end, comp_scale, caller):
+    def get_bone_transform(self, start, end, compensation_cube_scale, caller):
+        """
+        From two positions to transformation matrix
+        Apply corresponding scale first
+
+        :param start: len 3 np.array of the starting point
+        :param end: len 3 np.array of the ending point
+        :param compensation_cube_scale: the OpenGL cube scale, to compasate for transformation
+        :param caller: caller name, defined in self.component_names
+        """
         if caller == "arm":
             finger_scale = 1
         else:
             finger_scale = self.finger_scale
-        bone_scale = 0.67 * finger_scale
+        bone_scale = self.bone_scale * finger_scale
 
         direction = end-start
-        m = glm.scale(np.eye(4, dtype=np.float32), bone_scale, 1/comp_scale/2 * np.linalg.norm(direction), bone_scale)  # scale down a little bit
+        m = glm.scale(np.eye(4, dtype=np.float32), bone_scale, 1/compensation_cube_scale/2 * np.linalg.norm(direction), bone_scale)  # scale down a little bit
         m = rotate_to_direction(m, direction)
         m = glm.translate(m, *((start+end)/2))  # to middle point
         return m
@@ -257,6 +283,7 @@ class Hand:
 
     @property
     def formatted_data(self):
+        # you can surely guess what this does from the name
         obj = {name: {n: v.tolist() for n, v in zip(self.name_to_pos_names[name], getattr(self, name))} for name in self.component_names}
         obj["timestamp"] = self.timestamp
         obj["palm_normal"] = self.palm_normal.tolist()

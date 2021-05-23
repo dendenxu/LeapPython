@@ -1,3 +1,7 @@
+# Pure OpenGL shader, used to display a cube on the screen
+# provides interface for model matrix and transform matrix update
+# if you're not concerned with the actual rendering process of the driver, don't look into this file
+
 from glumpy import app, gl, glm, gloo, __version__
 import numpy as np
 
@@ -100,8 +104,9 @@ void main()
         self.program['u_model'] = value
 
     def draw(self):
-        # log.info(f"Redrawing...")
+        # should be called on every draw loop (window event)
 
+        # log.info(f"Redrawing...")
         # self.program['u_transform'] = self.transform
 
         # Filled cube
@@ -109,4 +114,5 @@ void main()
         self.program.draw(gl.GL_TRIANGLES, self.I)
 
     def resize(self, width, height):
+        # should be called on every resizing loop (window event)
         self.program['u_projection'] = glm.perspective(45.0, width / float(height), 2.0, 200.0)
