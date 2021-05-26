@@ -4,7 +4,13 @@
 
 Based on `WebSocket`.
 
-All python files except `glum.py` ARE NOT PART OF THE DRIVER, THEY'RE JUST FOR FUN.
+- `main.py`: contains the main funciton of the project, should be run with `python main.py`, spawns multiple threads
+- `hand.py`: the main file of the driver, maps websocket json into human readable python objects
+- `cube.py`: OpenGL program, used for rendering the hand on the screen, skip it if you don't want to see shaders
+- `beacon.py`: the Serial (possibly via Bluetooth) communication manager, core is a PySerial object, can be disabled for debugging
+- `log.py`: global logger, for a friendly debugging experience with time of the log can colors to identify the importance
+- `utils.py`: not used in the main program, used for testing the serial connection, it just prints out every message it receives
+- `helper.py`: some OpenGL styled transformation matrix, expanded on the `glm` package provieded by `glumpy`
 
 ![demo](readme.assets/demo.gif)
 
@@ -63,7 +69,7 @@ For your convenience, this is the [download link](https://www2.leapmotion.com/v4
 You can just run
 
 ```shell
-python glum.py
+python main.py
 ```
 
 to see whether everything is working now.
