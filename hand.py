@@ -72,9 +72,9 @@ class Hand:
         # global finger key point scale relative to arm
         self.finger_scale = 0.5
         # global bones scale relative to finger
-        self.finger_scale = 0.67
+        self.bone_scale = 0.67
         # show_type: 1: only joints, 2: joints + bones, 0: bones
-        self.show_type = 1
+        self.show_type = 0
 
         # OpenGL objects
         # actual OpenGL object wrapper of all key points, reused

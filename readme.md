@@ -8,6 +8,14 @@ All python files except `glum.py` ARE NOT PART OF THE DRIVER, THEY'RE JUST FOR F
 
 ![demo](readme.assets/demo.gif)
 
+
+
+## Checkout The Development Log
+
+See [`ppt.md`](./ppt.md) for some Chinese version development log.
+
+
+
 ## Quick Start
 
 ### Python Setup

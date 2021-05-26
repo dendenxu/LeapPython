@@ -61,7 +61,7 @@ update_hand_obj = True  # can be used repeatedly, to pause or resume receiving W
 # Device Control, updated dynamically
 device_ready = False  # whether the MCU said he's ready after we've sent a command
 arduino_fps = 0  # the loop time received from the MCU, updated upon receiving
-parse_interval = 1/20  # extra time to wait after one parsing operation, updated with 1/parse_interval
+parse_interval = 1/20  # extra time to wait after one parsing operation, updated with 1/arduino_fps
 
 
 # * the actual hand pool, stores global hand object, updated by sampler, used by renderer
