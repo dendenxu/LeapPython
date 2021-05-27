@@ -161,13 +161,14 @@ class GestureParser:
                 msg["angle3"] = "70"
                 # 爪子打开
             
-            if is_wrap[0] and not is_wrap[4]:
-                msg["angle0"] = "63"
-                # 向右转
 
-            if is_wrap[4] and not is_wrap[0]:
-                msg["angle0"] = "127"
-                # 向左转
+            # if is_wrap[0] and not is_wrap[4]:
+            #     msg["angle0"] = "63"
+            #     # 向右转
+
+            # if is_wrap[4] and not is_wrap[0]:
+            #     msg["angle0"] = "127"
+            #     # 向左转
             
             # 在y上的移动大概是[1.3, 2.6]
             # 在z上的移动大概是[0, -1.5]
@@ -177,13 +178,15 @@ class GestureParser:
             # y -> 上臂
             # z -> 下臂
 
-            dis_pos = (palm - self.base_left)[[1, 2]]
+            dis_pos = (palm - self.base_left)
 
             print(dis_pos)
-            dis_pos[1] = max(-1.5, min(0.6, dis_pos[1]))
-            dis_pos[0] = max(0.6, min(3.3, dis_pos[0]))
-            msg["angle2"] = 10 + round((100 - 10) * (dis_pos[0] / (3.3 - 0.6)))
-            msg["angle1"] = 40 + round((120 - 40) * (dis_pos[1] / (-1.5)))
+            dis_pos[2] = max(-1.5, min(0.6, dis_pos[2]))
+            dis_pos[1] = max(0.6, min(3.3, dis_pos[1]))
+            dis_pos[0] = max(-2, min(2, dis_pos[0]))
+            msg["angle2"] = 10 + round((100 - 10) * (dis_pos[1] / (3.3 - 0.6)))
+            msg["angle1"] = 40 + round((120 - 40) * (dis_pos[2] / (-1.5)))
+            msg["angle0"] = -90 + round((90 - (-90)) * (dis_pos[0] / 4))
 
             print(dis_pos)
             print(msg["angle2"])
