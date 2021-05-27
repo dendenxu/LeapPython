@@ -2,3 +2,5 @@ __pycache__
 glfw3.dll
 output(decoded).txt
 
+*.swp
+*~
